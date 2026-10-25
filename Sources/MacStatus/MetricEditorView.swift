@@ -122,7 +122,10 @@ struct MetricEditorView: View {
                         .frame(maxWidth: .infinity, minHeight: 34)
                         .foregroundStyle(selectedPage == page ? Palette.mint : Palette.muted)
                         .background(selectedPage == page ? Palette.mint.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selectedPage == page ? Palette.mint.opacity(0.35) : .clear, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(selectedPage == page ? Palette.mint.opacity(0.35) : .clear, lineWidth: 1)
+                            .allowsHitTesting(false))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selectedPage == page ? [.isSelected] : [])
