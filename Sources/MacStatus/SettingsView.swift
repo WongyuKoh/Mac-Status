@@ -218,8 +218,8 @@ struct TemplateBuilderView: View {
             HStack(spacing: 14) {
                 Image(systemName: "square.stack.3d.up").font(.system(size: 28, weight: .light)).foregroundStyle(Palette.mint)
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("데이터는 달라도, 만드는 방식은 같게.").font(.system(size: 16, weight: .semibold))
-                    Text("이름, 단위, 데이터 소스를 템플릿으로 정의하면\n새로운 통계도 같은 카드 스타일로 표시됩니다.")
+                    Text("원하는 통계 보기").font(.system(size: 16, weight: .semibold))
+                    Text("내가 원하는 통계를 자유롭게 추가해 확인할 수 있습니다")
                         .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
                 }
             }.padding(22).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
