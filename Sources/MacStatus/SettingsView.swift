@@ -52,10 +52,7 @@ struct SettingsView: View {
             navItem("새 항목 만들기", icon: "plus.circle", tab: 1)
             navItem("앱 설정", icon: "slider.horizontal.3", tab: 2)
             Spacer()
-            VStack(alignment: .leading, spacing: 7) {
-                Text("작은 창. 넓은 시야.").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.muted)
-                Text("VERSION \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.1")").font(.system(size: 8, design: .monospaced)).tracking(1).foregroundStyle(Palette.muted.opacity(0.5))
-            }
+            Text("VERSION \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.1")").font(.system(size: 8, design: .monospaced)).tracking(1).foregroundStyle(Palette.muted.opacity(0.5))
         }.padding(20).frame(width: 174).background(Palette.surface.opacity(0.5))
     }
 
