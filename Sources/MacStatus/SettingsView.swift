@@ -14,7 +14,10 @@ struct SettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 7) {
                         Text(["나의 항목", "새 항목 만들기", "앱 설정"][selectedTab]).font(.system(size: 25, weight: .semibold))
-                        Text(["자주 보는 숫자만, 원하는 순서로.", "같은 스타일, 무한한 가능성.", "Mac Status를 나에게 맞추세요."][selectedTab]).font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        if selectedTab != 0 {
+                            Text(selectedTab == 1 ? "같은 스타일, 무한한 가능성." : "Mac Status를 나에게 맞추세요.")
+                                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        }
                     }
                     Spacer()
                     if selectedTab == 0 { AccentButton(title: "항목 추가", symbol: "plus") { selectedTab = 1 } }
