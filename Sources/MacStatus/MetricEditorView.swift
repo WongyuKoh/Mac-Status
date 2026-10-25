@@ -297,16 +297,6 @@ struct MetricEditorView: View {
             .buttonStyle(.plain).fixedSize()
             .padding(.top, 4)
             .help("WakaTime 공식 연결 안내를 브라우저에서 엽니다.")
-            if isExisting {
-                Button("저장한 토큰 삭제") {
-                    if store.removeToken(template.id) {
-                        token = ""; error = nil
-                        testMessage = store.useWakaTimeConfiguration
-                            ? "저장한 토큰을 삭제했습니다. 기존 WakaTime 설정을 통한 조회는 유지됩니다."
-                            : "저장한 토큰을 삭제했습니다. 새 토큰을 연결할 때까지 조회를 멈춥니다."
-                    } else { testMessage = nil; error = "키체인에서 토큰을 삭제하지 못했습니다. 키체인 접근 권한을 확인해 주세요." }
-                }.buttonStyle(.bordered).controlSize(.small).font(.system(size: 11))
-            }
         }
     }
 
