@@ -97,8 +97,8 @@ struct MetricEditorView: View {
                 case .general: generalFields
                 case .connection:
                     if isWakaTime { editorGroup("WakaTime 연결") { wakaTimeFields } }
-                    else { editorGroup("API 연결") { httpConnectionFields } }
-                case .authentication: editorGroup("인증 정보") { authenticationFields }
+                    else { editorGroup("API 연결", help: .connection) { httpConnectionFields } }
+                case .authentication: editorGroup("인증 정보", help: .authentication) { authenticationFields }
                 case .additional: additionalFields
                 }
                 Spacer(minLength: 0)
@@ -219,16 +219,16 @@ struct MetricEditorView: View {
 
     private var httpConnectionFields: some View {
         VStack(alignment: .leading, spacing: 12) {
-            StatusTextField("API 주소 · GET", text: $template.endpoint, prompt: "https://")
+            StatusTextField("API 주소 · GET", text: $template.endpoint, prompt: "예: https://example.com/api/usage?period=month")
             Text("시간 변수: {{month_start_unix}}, {{now_unix}}, {{month_start_iso}}")
                 .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted).textSelection(.enabled)
-            field("값 JSON 경로", text: $template.valuePath)
+            StatusTextField("값 JSON 경로", text: $template.valuePath, prompt: "예: usage.current")
             StatusTextField("한도 JSON 경로 · 선택", text: $template.limitPath, prompt: "예: usage.limit")
             HStack(alignment: .top, spacing: 14) {
                 StatusMenuPicker("여러 값 처리", selection: $template.aggregation, options: [("first", "단일 값"), ("sum", "합계")], symbol: "sum")
                 StatusTextField("값 배율", text: $multiplierText, prompt: "센트 → 달러는 0.01")
             }
-            Text("숫자 위치는 usage.total처럼 점으로 구분합니다. 여러 숫자를 더하려면 ‘합계’를 선택하세요.")
+            Text("JSON의 숫자 위치를 점으로 구분합니다. 응답·경로 예시는 위의 ‘입력 예시 · 설정 방법’에서 확인하세요.")
                 .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -236,18 +236,16 @@ struct MetricEditorView: View {
     private var authenticationFields: some View {
         VStack(alignment: .leading, spacing: 14) {
             StatusSecureField("API 키 · macOS 키체인에 저장", text: $token,
-                              prompt: isExisting ? "변경할 때만 입력 · 기존 키 유지" : "인증이 필요하면 입력하세요")
-            if template.endpoint.contains("api.openai.com") || template.endpoint.contains("api.anthropic.com") {
-                Text(template.endpoint.contains("api.openai.com")
-                     ? "OpenAI 조직 Admin API 키가 필요합니다. ChatGPT·Codex 구독 사용량과 별도인 API 통계입니다."
-                     : "Anthropic 조직 Admin API 키가 필요합니다. Claude 구독 한도와 별도인 API 통계입니다.")
+                              prompt: isExisting ? "변경할 때만 입력 · 기존 키 유지" : "서비스에서 발급받은 API 키만 입력")
+            if let requirement = APIProviderRequirement(endpoint: template.endpoint) {
+                Text(requirement.notice)
                     .font(.system(size: 11)).foregroundStyle(Palette.tint("orange")).fixedSize(horizontal: false, vertical: true)
             }
             HStack(alignment: .top, spacing: 14) {
-                StatusTextField("인증 헤더", text: $template.authHeader, prompt: "없으면 비워 두기")
-                StatusTextField("키 앞에 붙일 값", text: $template.authPrefix, prompt: "예: Bearer 뒤에 공백")
+                StatusTextField("인증 헤더", text: $template.authHeader, prompt: "예: Authorization 또는 x-api-key")
+                StatusTextField("키 앞에 붙일 값", text: $template.authPrefix, prompt: "예: Bearer 뒤에 공백 한 칸")
             }
-            Text("키는 이 Mac의 키체인에 저장합니다. 인증이 필요 없는 API는 키를 입력하지 않아도 됩니다.")
+            Text("키는 항목을 저장할 때 이 Mac의 키체인에 저장합니다. 공개 API는 키·인증 헤더·접두어를 모두 비우세요.")
                 .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             if !template.headers.isEmpty {
                 Button("추가 헤더 \(template.headers.count)개 보기") { showingHeaders = true }
@@ -297,9 +295,14 @@ struct MetricEditorView: View {
         }
     }
 
-    private func editorGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func editorGroup<Content: View>(_ title: String, help: APIInputGuideTopic? = nil,
+                                           @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 10) {
-            Text(title).font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 8) {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 4)
+                if let help { APIInputGuideButton(topic: help) }
+            }
             content()
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

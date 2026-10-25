@@ -23,11 +23,26 @@ Codex·Claude 사용량, WakaTime 기록 시간과 Mac의 상태를 한곳에서
 3. 상단바 아이콘을 누르면 CPU·메모리·저장공간·발열 통계가 자동으로 표시됩니다.
 4. AI 사용량은 앱의 Codex·Claude 카드에서 계정을 연결합니다.
 
-로그인은 서비스 계정의 데이터를 보기 위한 최초 설정이며 별도 프로그램을 설치하는 과정은 없습니다. API 비용·토큰에는 해당 서비스의 관리자 API 키가 별도로 필요합니다.
+로그인은 서비스 계정의 데이터를 보기 위한 최초 설정이며 별도 프로그램을 설치하는 과정은 없습니다. API 비용·토큰에는 해당 조회 API의 읽기 권한이 있는 키나 자격 증명이 별도로 필요합니다.
 
 로그인·설정 창을 열면 Dock에도 앱이 표시되며, 해당 창을 모두 닫으면 상단바에만 남습니다.
 
 설정에서 로그인 시 실행을 켤 수 있습니다. macOS가 승인을 요구하면 시스템 설정의 로그인 항목에서 허용하세요. 현재 빌드는 로컬 실행을 위한 ad hoc 서명을 사용하며 배포용 Developer ID 서명·공증은 포함하지 않습니다.
+
+### 앱 업데이트
+
+**0.7.0부터 앱 안에서 새 버전 확인·다운로드·설치 후 재시작을 진행할 수 있습니다.** 설정 → 앱 설정 → **앱 업데이트 → 업데이트 확인**을 누르거나 앱 메뉴의 **업데이트 확인**을 사용하세요. 새 버전이 있으면 업데이트 창에서 다운로드와 설치를 진행합니다. 업데이트 기능은 앱에 포함된 [Sparkle](https://sparkle-project.org/)을 사용하므로 별도 프로그램을 설치할 필요가 없습니다.
+
+**자동으로 업데이트 확인**은 새 버전을 확인하고 알려 주는 옵션입니다. 이 옵션만 켰다고 앱이 조용히 교체되지는 않으며, 다운로드·설치는 업데이트 창에서 선택합니다. 배포 피드와 ZIP의 EdDSA 서명을 확인하고, ZIP은 압축 해제 전에 검증합니다. 이 업데이트 서명은 Developer ID 서명·공증과 구분되며, 현재 빌드의 ad hoc 서명 상태는 그대로입니다.
+
+**0.6.25 이하 버전에는 업데이트 기능이 없습니다.** 이 버전을 사용하고 있다면 0.7.0을 한 번 내려받아 기존 앱을 교체하세요. 그다음 배포부터는 앱의 업데이트 기능을 사용할 수 있습니다.
+
+<details>
+<summary>앱 업데이트 설정 화면 보기</summary>
+<p align="center">
+  <img src="docs/images/app-updates.png" alt="Mac Status 업데이트 확인과 자동 확인 설정 — 실제 앱 화면" width="900">
+</p>
+</details>
 
 ## 제공 통계
 
@@ -57,6 +72,18 @@ Codex·Claude 이름 옆에는 계정에서 확인한 **구독 플랜**을 표�
 - **숫자 수동 입력:** 현재 값·단위·선택 한도와 서비스 바로가기를 직접 설정합니다. 값이 바뀌면 직접 수정하며, API 주소·인증·연결 테스트·자동 새로고침 설정은 표시하지 않습니다.
 
 프리셋이나 JSON의 `kind`로 정한 방식에 맞춰 편집 화면이 열리며, 편집 중에는 다른 방식으로 전환하는 선택기를 표시하지 않습니다.
+
+**API 연결**과 **인증** 탭의 제목 옆에 있는 **입력 예시 · 설정 방법**을 누르면 응답 JSON과 입력값, 필요한 서비스 설정을 볼 수 있습니다. API 주소·숫자 위치·인증 헤더에는 입력 형식 예시도 표시합니다. 안내의 `example.com`과 숫자는 가상의 설명용 데이터이며 실제로 조회되는 서비스가 아닙니다. 예시를 열어도 현재 설정이나 보안 키가 자동으로 채워지지 않습니다.
+
+API는 숫자가 담긴 JSON을 반환하는 GET 주소와 필요한 쿼리 조건을 공식 문서에서 확인해야 합니다. 키에는 그 조회 API를 읽을 수 있는 권한이 있어야 하며 조직·프로젝트 범위, 유효 기간과 접근 제한도 조회 대상에 맞아야 합니다. Bearer 인증은 `Authorization`과 끝에 공백이 있는 `Bearer `, `x-api-key` 인증은 `x-api-key`와 빈 접두어를 사용합니다. 인증 없는 공개 API는 키·인증 헤더·접두어를 모두 비웁니다.
+
+<details>
+<summary>API 연결·인증 입력 안내 화면 보기</summary>
+<p align="center">
+  <img src="docs/images/api-connection.png" alt="API 주소·JSON 경로 입력 예시와 설정 도움말 — 실제 앱 화면" width="680">
+  <img src="docs/images/api-authentication.png" alt="API 키·인증 헤더·접두어 입력 예시와 권한 안내 — 실제 앱 화면" width="680">
+</p>
+</details>
 
 <details>
 <summary>새 입력칸과 항목 편집 화면 보기</summary>
@@ -120,14 +147,14 @@ Mac Status는 WakaTime 서버의 기록을 읽어 표시하며 활동 추적기�
 
 ### API 토큰·비용
 
-OpenAI API 프리셋에는 **조직 사용량을 조회할 수 있는 Admin API Key**가 필요합니다. 일반 모델 호출용 키 또는 ChatGPT 구독 로그인으로는 조직 비용을 조회할 수 없습니다. 연결 설정의 보안 키 필드에 입력하세요.
+OpenAI API 프리셋에는 **조직 사용량을 조회할 수 있는 Admin API Key**가 필요합니다. 일반 모델 호출용 키 또는 ChatGPT 구독 로그인으로는 조직 비용을 조회할 수 없습니다. 연결 설정의 보안 키 필드에 입력하세요. [OpenAI Admin API 공식 문서](https://developers.openai.com/api/reference/administration/overview)
 
 - 비용은 `/v1/organization/costs`의 금액을 합산합니다.
 - 토큰은 `/v1/organization/usage/completions`의 입력 토큰을 합산합니다. 출력 토큰이 필요하면 항목을 추가하고 `valuePath`를 `data.*.results.*.output_tokens`로 설정하세요.
 - 기간은 UTC 기준 이번 달입니다. API 청구 반영 지연은 서버의 집계에 따릅니다.
 - API 응답이 여러 페이지로 나뉘면 불완전한 합계를 표시하지 않고 조회 범위를 조정하도록 안내합니다.
 
-Anthropic용 비용·입력 토큰 프리셋도 새 항목 화면에서 추가할 수 있습니다. JSON 예시는 `Templates/` 폴더에 있습니다. Anthropic 조직 조회에는 별도의 Admin API Key가 필요합니다. 구독 사용률과 API 비용을 합쳐서 표시하지 않습니다.
+Anthropic용 비용·입력 토큰 프리셋도 새 항목 화면에서 추가할 수 있습니다. JSON 예시는 `Templates/` 폴더에 있으며 기본 예시는 Admin API Key를 사용합니다. 공식 문서는 조직 조회용 자격 증명으로 Admin 키 외에 `org:admin` OAuth 토큰과 워크스페이스에 묶이지 않은 개인·서비스 계정 키도 안내합니다. 워크스페이스 범위 키는 사용할 수 없으며, 다른 자격 증명을 쓰면 문서에 맞춰 인증 헤더도 설정해야 합니다. 구독 사용률과 API 비용은 구분합니다. [Anthropic Usage and Cost API 공식 문서](https://platform.claude.com/docs/en/manage-claude/usage-cost-api)
 
 ## 나만의 항목 만들기
 
@@ -202,14 +229,14 @@ URL의 `{{month_start_unix}}`, `{{now_unix}}`, `{{month_start_iso}}`는 실행�
 - WakaTime의 기존 설정 사용을 켠 경우 `~/.wakatime.cfg`의 인증 정보만 읽어 WakaTime 조회에 사용합니다. 직접 입력한 OAuth 토큰은 키체인에 저장하며 기존 설정 파일을 변경하지 않습니다.
 - 연결 해제 시 이 앱의 해당 서비스 세션을 삭제합니다.
 - 시스템 통계는 이 Mac에서 읽습니다. 분석·추적 서버를 사용하지 않습니다.
-- 네트워크 요청은 사용자가 연결한 AI 사용량 서비스·WakaTime과 템플릿에 지정한 서버로만 보냅니다.
+- 통계 조회 요청은 사용자가 연결한 AI 사용량 서비스·WakaTime과 템플릿에 지정한 서버로 보냅니다. 업데이트 확인·다운로드에는 GitHub Releases의 배포 피드와 파일을 사용합니다.
 - 임의의 셸 명령이나 JavaScript를 템플릿으로 실행하지 않습니다.
 
 ## 소스에서 빌드하기 · 개발자용
 
 아래 도구는 앱을 만드는 개발자에게만 필요합니다. 완성된 `.app`을 사용하는 사람에게는 필요하지 않습니다.
 
-macOS 14 이상과 Xcode 또는 Swift 개발 도구가 필요합니다. 외부 Swift 패키지 의존성은 없습니다.
+macOS 14 이상과 Xcode 또는 Swift 개발 도구가 필요합니다. 업데이트용 Sparkle을 `Package.swift`에 고정한 버전으로 SwiftPM에서 받아 앱 안에 포함합니다. 완성된 앱 사용자는 이 패키지나 개발 도구를 따로 설치하지 않습니다.
 
 ```sh
 ./scripts/run.sh
@@ -217,7 +244,7 @@ macOS 14 이상과 Xcode 또는 Swift 개발 도구가 필요합니다. 외부 S
 
 릴리스 빌드 후 `build/Mac Status.app`을 엽니다. 빌드만 하려면 `./scripts/build-app.sh`를 실행합니다. 스크립트는 Applications 폴더에 앱을 설치하지 않습니다.
 
-공개 스크린샷은 `--demo` 플래그로 실제 네이티브 앱을 실행해 만들 수 있습니다. DEMO 모드는 예시 데이터와 메모리 전용 설정을 사용하며 실제 계정·WakaTime 설정·인증 정보·네트워크를 읽지 않습니다. 자동 실행 상태 조회·등록·해제도 차단하고, 데모의 자동 실행 스위치는 비활성화합니다. 촬영용 Preview 앱은 배포 파일에 포함하지 않습니다.
+공개 스크린샷은 `--demo` 플래그로 실제 네이티브 앱을 실행해 만들 수 있습니다. DEMO 모드는 예시 데이터와 메모리 전용 설정을 사용하며 실제 계정·WakaTime 설정·인증 정보·네트워크를 읽지 않습니다. 자동 실행 상태 조회·등록·해제와 실제 업데이트 확인도 차단합니다. 촬영용 Preview 앱은 배포 파일에 포함하지 않습니다.
 
 배포용 ZIP을 만들려면:
 
@@ -225,7 +252,11 @@ macOS 14 이상과 Xcode 또는 Swift 개발 도구가 필요합니다. 외부 S
 ./scripts/package-app.sh
 ```
 
-결과는 `build/Mac-Status.zip`과 `build/Mac-Status.dmg`입니다. ZIP에는 `.app` 하나가, DMG에는 앱과 Applications 바로가기가 포함됩니다. 개발 도구나 CLI를 묶거나 실행 중 다운로드하지 않습니다.
+배포 결과는 `build/`의 `Mac-Status.zip`, `Mac-Status.dmg`, `appcast.xml`, `SHA256SUMS.txt`입니다. `package-app.sh`는 앱을 묶은 뒤 `scripts/make-appcast.py`로 피드를 서명하고 ZIP·DMG·피드의 SHA-256 체크섬을 생성합니다. ZIP에는 `.app` 하나가, DMG에는 앱과 Applications 바로가기가 포함됩니다. 앱에는 Sparkle 프레임워크와 업데이트용 헬퍼가 포함되며, 통계 조회를 위해 개발 도구나 AI CLI를 설치하거나 다운로드하지 않습니다.
+
+새 버전은 위 네 파일을 같은 GitHub Release에 올립니다. 앱은 [최신 배포 피드](https://github.com/WongyuKoh/Mac-Status/releases/latest/download/appcast.xml)에서 버전·ZIP 주소·크기·EdDSA 서명을 읽으며, 서명이 맞는 아카이브만 압축 해제합니다. `SHA256SUMS.txt`는 수동 다운로드의 체크섬 확인용이며 업데이트 서명을 대체하지 않습니다.
+
+업데이트 서명 개인 키는 배포 Mac의 로그인 키체인에 Sparkle 계정 `com.kwg.macstatus`로 보관합니다. 키를 배포할 때마다 새로 만들지 않으며, 개인 키를 저장소나 릴리스 파일로 내보내지 않습니다. 저장소의 `config/updater-public-key.txt`와 앱의 `SUPublicEDKey`에는 공개 키만 포함합니다. 패키징은 키체인의 서명 키·설정 파일·앱 공개 키가 서로 맞지 않으면 중단합니다. 이 공개 키와 키체인 계정을 유지해야 기존 설치본이 다음 업데이트를 검증할 수 있습니다.
 
 ## 개발 검증
 
@@ -239,4 +270,4 @@ swift test --disable-sandbox --scratch-path .build \
 
 테스트에는 계정 키나 로그인 정보가 필요하지 않습니다. 사용량 응답 파서, JSON 템플릿, 숫자 추출·검증, 시스템 수치와 센서 형식을 확인합니다. 실제 계정의 연결과 센서 지원 여부는 실행한 Mac에서 확인해야 합니다.
 
-앱은 SwiftUI·AppKit, WebKit, Foundation, IOKit, Security 등 macOS 기본 프레임워크로 구현합니다. 실제 계정의 로그인 완료는 자동 테스트에서 수행하지 않습니다. 배포 시에는 Developer ID 서명·공증을 별도로 준비해야 합니다.
+앱은 SwiftUI·AppKit, WebKit, Foundation, IOKit, Security 등 macOS 프레임워크와 Sparkle로 구현합니다. 실제 계정의 로그인 완료는 자동 테스트에서 수행하지 않습니다. 배포용 Developer ID 서명·공증은 별도로 준비해야 합니다.

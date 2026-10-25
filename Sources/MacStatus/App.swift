@@ -15,7 +15,7 @@ enum MacStatusMain {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSMenuItemValidation {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private var settingsWindow: NSWindow?
@@ -27,9 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let accountLogin = AccountLoginController()
     private let consoleLogin = ClaudeConsoleLoginController()
     private lazy var store = DemoData.isEnabled ? DemoData.makeStore() : StatusStore()
+    private lazy var updater = AppUpdater(isEnabled: !DemoData.isEnabled)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         InputDiagnostics.start()
+        _ = updater
         configureMenu()
         store.onRequestLogin = { [weak self] kind in
             guard let self, !DemoData.isEnabled else { return }
@@ -123,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             window.center()
             settingsWindow = window
         }
-        settingsWindow?.contentViewController = NSHostingController(rootView: SettingsView(store: store, selectedTab: builder ? 1 : 0))
+        settingsWindow?.contentViewController = NSHostingController(rootView: SettingsView(store: store, updater: updater, selectedTab: builder ? 1 : 0))
         if let settingsWindow { WindowFocus.present(settingsWindow) }
     }
 
@@ -168,6 +170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Sparkle presents its own standard windows. Do not replace their focus
+        // with the settings window or reopen the dashboard over them.
+        if let window = NSApp.keyWindow, window.isVisible, window.styleMask.contains(.titled), !(window is KeyboardWindow) {
+            return
+        }
         // activate() is asynchronous. Reassert the editable key window after
         // WindowServer has actually foregrounded this application.
         if let window = NSApp.orderedWindows.first(where: { $0 is KeyboardWindow && $0.isVisible }) {
@@ -180,6 +187,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     @objc private func openSettingsFromMenu() { showSettings(builder: false) }
 
+    @objc private func checkForUpdatesFromMenu() {
+        guard updater.canCheckForUpdates else { return }
+        presentAfterPopoverCloses { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            self?.updater.checkForUpdates()
+        }
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdatesFromMenu) { return updater.canCheckForUpdates }
+        return true
+    }
+
     private func configureMenu() {
         let menu = NSMenu()
         let applicationItem = NSMenuItem()
@@ -187,6 +207,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let settings = NSMenuItem(title: "Mac Status 설정…", action: #selector(openSettingsFromMenu), keyEquivalent: ",")
         settings.target = self
         applicationMenu.addItem(settings)
+        let updates = NSMenuItem(title: "업데이트 확인…", action: #selector(checkForUpdatesFromMenu), keyEquivalent: "")
+        updates.target = self
+        applicationMenu.addItem(updates)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Mac Status 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         applicationItem.submenu = applicationMenu

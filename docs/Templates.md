@@ -46,7 +46,38 @@ Mac Status는 JSON 설정을 같은 통계 카드로 렌더링합니다. 새 서
 
 `x-api-key` 인증은 `authHeader: "x-api-key"`, `authPrefix: ""`로 설정합니다. 실제 키는 앱의 보안 키 필드에 입력하며 macOS 키체인에 저장됩니다. 템플릿, URL, 일반 헤더에 토큰·Cookie·비밀번호를 넣을 수 없습니다. 템플릿을 내보내도 키는 포함되지 않습니다.
 
-인증 없는 공개 API는 `authHeader: ""`로 설정하세요.
+인증 없는 공개 API는 보안 키를 입력하지 않고 `authHeader: ""`, `authPrefix: ""`로 설정하세요.
+
+## 앱의 입력 예시와 서비스 설정
+
+항목 편집의 **API 연결** 또는 **인증** 탭에서 **입력 예시 · 설정 방법**을 누르면 상세 안내가 열립니다. 설명은 읽기 전용이며, 현재 입력값이나 보안 키를 자동으로 바꾸지 않습니다. 숫자 수동 입력 화면에는 이 API 설정을 표시하지 않습니다.
+
+API 문서에서 숫자가 들어 있는 JSON을 반환하는 GET 주소를 찾고, 필요한 기간·프로젝트 등 조건을 URL의 쿼리에 넣습니다. 이 앱은 요청 본문(body)을 보내지 않습니다. 다음 주소와 응답은 입력 형식만 설명하기 위한 가상 예시입니다.
+
+```text
+GET https://example.com/api/usage?period=month
+```
+
+```json
+{
+  "usage": {
+    "current": 42,
+    "limit": 100
+  }
+}
+```
+
+앱에 `valuePath: "usage.current"`, `limitPath: "usage.limit"`, `aggregation: "first"`, `multiplier: 1`을 입력하면 이 설명용 응답에서는 값 42와 한도 100을 읽습니다. `example.com`은 실제 조회 서비스가 아니므로 서비스의 공식 주소·쿼리·응답 경로로 바꿔야 합니다.
+
+인증이 필요한 API는 서비스의 개발자·관리자 콘솔에서 해당 조회 API에 쓸 수 있는 키를 준비합니다. 사용량·비용 GET API의 읽기 권한, 조회할 조직·프로젝트 범위, 만료·비활성 상태와 접근 제한을 확인하세요. 키가 모델 호출에 사용된다고 해서 조직의 비용 조회 권한도 있다는 뜻은 아닙니다.
+
+| 서비스 문서의 인증 방식 | 인증 헤더 | 키 앞에 붙일 값 | API 키 입력 |
+| --- | --- | --- | --- |
+| Bearer | `Authorization` | `Bearer ` — 마지막 공백 한 칸 포함 | 발급받은 실제 키만 입력 |
+| x-api-key | `x-api-key` | 빈칸 | 발급받은 실제 키만 입력 |
+| 인증 없음 | 빈칸 | 빈칸 | 빈칸 |
+
+키와 토큰은 예시 JSON이나 URL에 넣지 않고 앱의 보안 키 칸에 입력합니다. 설정 후 **연결 테스트**로 숫자가 읽히는지 확인하고 저장합니다. 채팅 구독의 5시간·주간 한도와 이 API 통계는 구분됩니다.
 
 ## 날짜 변수
 
@@ -68,7 +99,7 @@ URL에서 다음 변수를 사용할 수 있습니다. 달 경계는 UTC 기준�
 
 `Templates/anthropic-monthly-input-tokens.json`은 `uncached_input_tokens`만 합산합니다. 캐시 읽기/쓰기와 출력은 제외한 값입니다. `output_tokens`, `cache_read_input_tokens`, `cache_creation.ephemeral_5m_input_tokens`, `cache_creation.ephemeral_1h_input_tokens`는 각각 별도 항목으로 만들 수 있습니다. [Messages Usage Report 스키마](https://platform.claude.com/docs/en/api/beta/organization/usage_report/retrieve_messages)를 참고하세요.
 
-Anthropic 예시는 Admin API 키를 보안 키 필드에 입력해야 합니다. `authHeader: x-api-key`, 빈 `authPrefix`, `headers`의 `anthropic-version: 2023-06-01`을 사용합니다. Claude Code 구독 OAuth 사용량과 API 조직 비용은 별도입니다. 두 예시도 UTC 이번 달의 일별 버킷을 최대 31개 요청하며 페이지가 남으면 합계를 표시하지 않습니다.
+Anthropic 기본 예시는 Admin API 키를 보안 키 필드에 입력하고 `authHeader: x-api-key`, 빈 `authPrefix`, `headers`의 `anthropic-version: 2023-06-01`을 사용합니다. 현재 공식 문서는 Admin 키 외에 `org:admin` OAuth 토큰과 워크스페이스에 묶이지 않은 개인·서비스 계정 키 등 Admin API 자격 증명도 지원합니다. 워크스페이스 범위 키는 사용할 수 없으며, 다른 자격 증명은 공식 문서의 인증 헤더에 맞춰 설정합니다. Claude Code 구독 사용량과 API 조직 비용은 별도입니다. 두 예시도 UTC 이번 달의 일별 버킷을 최대 31개 요청하며 페이지가 남으면 합계를 표시하지 않습니다. [Anthropic 공식 사용량·비용 인증 안내](https://platform.claude.com/docs/en/manage-claude/usage-cost-api)
 
 ## 데이터 해석과 실패 처리
 

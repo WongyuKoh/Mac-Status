@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: StatusStore
+    @ObservedObject var updater: AppUpdater
     @State var selectedTab: Int = 0
     @State private var editing: MetricTemplate?
     @State private var removal: MetricTemplate?
@@ -110,6 +111,7 @@ struct SettingsView: View {
                 settingsToggleRow("상단바에 CPU 사용량 표시", description: "아이콘 옆에 현재 사용률을 표시합니다.",
                                   isOn: Binding(get: { store.showCPUInMenu }, set: { store.setMenuCPU($0) }))
             }.cardSurface()
+            updateSettings
             VStack(alignment: .leading, spacing: 16) {
                 Text("계정 연결").font(.system(size: 14, weight: .semibold))
                 connectionRow("Codex", connected: store.codexConnected, kind: .codex)
@@ -146,6 +148,42 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }.frame(maxWidth: .infinity, alignment: .leading).cardSurface()
         }
+    }
+
+    private var updateSettings: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(Palette.mint)
+                    .frame(width: 36, height: 36)
+                    .background(Palette.mint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("앱 업데이트").font(.system(size: 14, weight: .semibold))
+                    Text("현재 버전 \(updater.currentVersion)")
+                        .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                }
+                Spacer(minLength: 12)
+                Button { updater.checkForUpdates() } label: {
+                    Label("업데이트 확인", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(ConnectionActionButtonStyle(tint: Palette.mint))
+                .disabled(!updater.canCheckForUpdates)
+                .opacity(updater.canCheckForUpdates ? 1 : 0.5)
+            }.padding(20)
+            Divider().overlay(Palette.line)
+            settingsToggleRow("자동으로 업데이트 확인", description: "새 버전이 있으면 알려드립니다.", isOn: Binding(
+                get: { updater.automaticallyChecksForUpdates },
+                set: { updater.setAutomaticallyChecksForUpdates($0) }
+            ))
+            .disabled(DemoData.isEnabled)
+            Divider().overlay(Palette.line)
+            Text("새 버전을 내려받고 설치한 뒤 앱을 다시 시작합니다.")
+                .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(20)
+        }.cardSurface()
     }
 
     private func settingsLabel(_ title: String, description: String) -> some View {
