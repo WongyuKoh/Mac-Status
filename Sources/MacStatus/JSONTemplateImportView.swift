@@ -6,6 +6,7 @@ struct JSONTemplateImportView: View {
     let onError: () -> Void
     @State private var message: String?
     @State private var pendingExample: TemplateImportExample?
+    @State private var isVisible = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -52,6 +53,12 @@ struct JSONTemplateImportView: View {
                 .font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
             }.padding(22).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
+        }
+        .onAppear { isVisible = true }
+        .onDisappear {
+            isVisible = false
+            message = nil
+            pendingExample = nil
         }
         .onChange(of: json) { _, _ in message = nil }
         .confirmationDialog("작성 중인 내용을 예시로 바꿀까요?", isPresented: Binding(
@@ -131,7 +138,11 @@ struct JSONTemplateImportView: View {
     }
 
     private func showError(_ text: String) {
+        guard isVisible else { return }
         message = text
-        DispatchQueue.main.async { onError() }
+        DispatchQueue.main.async {
+            guard isVisible, message != nil else { return }
+            onError()
+        }
     }
 }
