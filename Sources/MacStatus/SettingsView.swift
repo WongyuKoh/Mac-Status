@@ -145,11 +145,6 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true).lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }.frame(maxWidth: .infinity, alignment: .leading).cardSurface()
-            VStack(alignment: .leading, spacing: 10) {
-                Label("내 Mac 안에만 저장", systemImage: "lock.shield").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.mint)
-                Text("항목 설정과 앱 전용 웹 로그인 세션은 이 Mac에, 직접 입력한 API 키·토큰은 macOS 키체인에 저장합니다. Codex·Claude는 다른 앱이나 브라우저의 로그인 정보를 읽지 않습니다. WakaTime 기존 설정은 위 옵션을 켠 경우에만 읽습니다. 연결한 서비스에만 조회 요청을 보내며 분석·추적 서버는 없습니다.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
-            }.padding(20).cardSurface()
         }
     }
 
