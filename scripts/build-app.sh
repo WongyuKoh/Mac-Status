@@ -31,8 +31,8 @@ cat > "$CONTENTS_PATH/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>MacStatus</string>
   <key>CFBundleIdentifier</key><string>com.kwg.macstatus</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.6.10</string>
-  <key>CFBundleVersion</key><string>18</string>
+  <key>CFBundleShortVersionString</key><string>0.6.11</string>
+  <key>CFBundleVersion</key><string>19</string>
   <key>CFBundleDevelopmentRegion</key><string>ko</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

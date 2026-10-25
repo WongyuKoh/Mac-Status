@@ -19,15 +19,19 @@ struct SettingsView: View {
                     Spacer()
                     if selectedTab == 0 { AccentButton(title: "항목 추가", symbol: "plus") { selectedTab = 1 } }
                 }.padding(30)
-                ScrollView {
-                    Group {
-                        switch selectedTab {
-                        case 0: metricList
-                        case 1: TemplateBuilderView(onEdit: { editing = $0 })
-                        default: generalSettings
-                        }
-                    }.padding(.horizontal, 30).padding(.bottom, 30)
-                }.scrollIndicators(.never)
+                ScrollViewReader { scroll in
+                    ScrollView {
+                        Group {
+                            switch selectedTab {
+                            case 0: metricList
+                            case 1: TemplateBuilderView(onEdit: { editing = $0 }, onImportError: {
+                                scroll.scrollTo("json-import-error", anchor: .center)
+                            })
+                            default: generalSettings
+                            }
+                        }.padding(.horizontal, 30).padding(.bottom, 30)
+                    }.scrollIndicators(.never)
+                }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 840, idealWidth: 900, minHeight: 650, idealHeight: 730)
@@ -207,10 +211,10 @@ private struct ConnectionActionButtonStyle: ButtonStyle {
 
 struct TemplateBuilderView: View {
     let onEdit: (MetricTemplate) -> Void
+    var onImportError: () -> Void = {}
     @State private var mode = TemplateCreationMode.presets
     @State private var request = ""
-    @State private var json = ""
-    @State private var message: String?
+    @State private var json = TemplateImportExample.manual.json
     @State private var copied = false
 
     var body: some View {
@@ -227,9 +231,8 @@ struct TemplateBuilderView: View {
             switch mode {
             case .presets: presetContent
             case .ai: generatorContent
-            case .json: importContent
+            case .json: JSONTemplateImportView(json: $json, onEdit: onEdit, onError: onImportError)
             }
-            if let message { Text(message).font(.system(size: 11)).foregroundStyle(Palette.tint("orange")).textSelection(.enabled) }
         }
     }
 
@@ -278,25 +281,4 @@ struct TemplateBuilderView: View {
         }.padding(22).cardSurface()
     }
 
-    private var importContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("템플릿 JSON").font(.system(size: 13, weight: .medium)); Spacer()
-                Button("클립보드에서 붙여넣기") { json = NSPasteboard.general.string(forType: .string) ?? "" }.buttonStyle(.borderless).font(.system(size: 11))
-            }
-            TextEditor(text: $json).font(.system(size: 11, design: .monospaced)).scrollContentBackground(.hidden).scrollIndicators(.never)
-                .padding(10).frame(height: 220).background(Palette.background, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.line))
-            Text("API 키는 JSON에 넣지 마세요. 검증한 뒤 편집 화면에서 키체인에 별도로 저장합니다.")
-                .font(.system(size: 11)).foregroundStyle(Palette.muted)
-            AccentButton(title: "검증하고 미리보기", symbol: "checkmark.shield") {
-                do {
-                    var template = try TemplateEngine.decode(json)
-                    template.id = UUID()
-                    message = nil
-                    onEdit(template)
-                } catch { message = error.localizedDescription }
-            }.disabled(json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }.padding(22).cardSurface()
-    }
 }

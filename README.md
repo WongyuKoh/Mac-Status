@@ -129,6 +129,16 @@ Anthropic용 비용·입력 토큰 프리셋도 새 항목 화면에서 추가�
 
 AI 호출은 앱에 내장되어 있지 않으므로 별도 생성 API 비용이 발생하지 않습니다. 템플릿은 실행 코드가 아닌 읽기 전용 데이터 연결 설정입니다. 공식 API가 없는 통계는 직접 입력 항목으로 만들 수 있습니다.
 
+**JSON 가져오기**에는 바로 수정할 수 있는 직접 입력 예시가 들어 있습니다. **예시 불러오기**에서 API 연결 예시로 바꿀 수도 있습니다. 입력란 아래의 3단계 안내를 따라 미리보기를 확인하고 항목을 추가하세요. 잘못된 내용은 주황색 오류 카드에 고칠 항목과 함께 표시합니다.
+
+<details>
+<summary>JSON 예시와 설정 안내 화면 보기</summary>
+<p align="center">
+  <img src="docs/images/json-import.png" alt="Mac Status JSON 예시와 단계별 설정 안내 — 공개용 DEMO" width="900">
+  <img src="docs/images/json-import-guide.png" alt="Mac Status JSON 설정 방법 3단계와 API 연결 안내 — 공개용 DEMO" width="900">
+</p>
+</details>
+
 예시:
 
 ```json

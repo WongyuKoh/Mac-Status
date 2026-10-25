@@ -13,26 +13,72 @@ enum TemplateEngine {
 
     static func decode(_ text: String) throws -> MetricTemplate {
         guard let data = text.data(using: .utf8), data.count <= 65_536 else {
-            throw StatusError.message("템플릿은 64 KB 이하의 JSON이어야 합니다.")
+            throw StatusError.message("내용이 너무 길어요. JSON을 64 KB 이하로 줄여 주세요.")
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw StatusError.message("입력란이 비어 있어요. 예시를 넣거나 JSON을 붙여 넣어 주세요.")
+        }
+        guard !trimmed.hasPrefix("```") else {
+            throw StatusError.message("앞뒤의 ``` 표시를 지우고 { } 안의 내용만 붙여 넣어 주세요.")
         }
         let object: [String: Any]
         do {
-            guard let dictionary = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw StatusError.message("하나의 JSON 객체를 붙여 넣어 주세요.")
+            guard let dictionary = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) as? [String: Any] else {
+                throw StatusError.message("템플릿 하나만 넣어 주세요. [ ] 대신 { }로 시작해야 합니다.")
             }
             object = dictionary
         } catch let error as StatusError { throw error }
-        catch { throw StatusError.message("JSON 형식을 확인해 주세요. 코드 블록 없이 JSON만 붙여 넣으세요.") }
+        catch { throw StatusError.message("쉼표와 큰따옴표를 확인해 주세요. 예시와 같은 JSON 형식이 필요합니다.") }
 
         guard !object.keys.contains(where: { secretNames.contains($0.lowercased()) }) else {
-            throw StatusError.message("키와 토큰은 JSON에 넣지 말고 연결 설정의 보안 키 필드에 입력하세요.")
+            throw StatusError.message("JSON에서 키와 토큰을 빼 주세요. 다음 편집 화면의 보안 키 칸에 입력할 수 있어요.")
         }
         let document: TemplateDocument
         do { document = try JSONDecoder().decode(TemplateDocument.self, from: data) }
-        catch { throw StatusError.message("템플릿 필드의 형식이 올바르지 않습니다. name, kind와 숫자 필드를 확인하세요.") }
+        catch let error as DecodingError { throw decodingMessage(error) }
+        catch { throw StatusError.message("항목 형식을 확인해 주세요. 예시와 비교해 보세요.") }
         let template = document.template
         try validate(template)
         return template
+    }
+
+    /// Only known schema field names may be shown. Decoder paths and descriptions
+    /// can contain arbitrary input, including a credential used as a header name.
+    private static func decodingMessage(_ error: DecodingError) -> StatusError {
+        let fields: Set<String> = ["id", "name", "subtitle", "symbol", "tint", "kind", "unit", "limit", "manualValue", "endpoint", "valuePath", "limitPath", "aggregation", "multiplier", "headers", "authHeader", "authPrefix", "refreshInterval", "link", "isEnabled"]
+        let labels = [
+            "name": "name(이름)", "kind": "kind(만들기 방식)",
+            "limit": "limit(한도)", "manualValue": "manualValue(현재 값)",
+            "multiplier": "multiplier(배율)", "refreshInterval": "refreshInterval(갱신 간격)"
+        ]
+        let context: DecodingError.Context
+        switch error {
+        case .keyNotFound(let key, _):
+            let field = fields.contains(key.stringValue) ? (labels[key.stringValue] ?? key.stringValue) : "필수 항목"
+            return .message("\(field) 항목이 빠졌어요. 예시를 보고 추가해 주세요.")
+        case .typeMismatch(_, let value), .valueNotFound(_, let value), .dataCorrupted(let value):
+            context = value
+        @unknown default:
+            return .message("항목 형식을 확인해 주세요. 예시와 비교해 보세요.")
+        }
+        guard let root = context.codingPath.first?.stringValue, fields.contains(root) else {
+            return .message("항목 형식을 확인해 주세요. 예시와 비교해 보세요.")
+        }
+        switch root {
+        case "kind":
+            return .message("kind(만들기 방식)을 확인해 주세요. 직접 입력은 \"manual\", API 연결은 \"http\"입니다.")
+        case "limit", "manualValue", "multiplier", "refreshInterval":
+            return .message("\(labels[root] ?? root)에 숫자를 넣어 주세요. 숫자에는 큰따옴표를 쓰지 않아요.")
+        case "headers":
+            return .message("headers는 { }로 감싸고, 안의 이름과 값은 큰따옴표로 감싸 주세요.")
+        case "isEnabled":
+            return .message("isEnabled에는 true 또는 false를 넣어 주세요.")
+        case "id":
+            return .message("id를 지우고 다시 시도해 주세요. 새 ID는 앱이 만듭니다.")
+        default:
+            return .message("\(labels[root] ?? root)의 글자를 큰따옴표로 감싸 주세요. 예: \"나의 통계\".")
+        }
     }
 
     static func encode(_ template: MetricTemplate) throws -> String {
@@ -46,57 +92,68 @@ enum TemplateEngine {
     }
 
     static func validate(_ template: MetricTemplate) throws {
-        guard !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              template.name.count <= 60, template.subtitle.count <= 180 else {
-            throw StatusError.message("항목 이름은 1~60자, 설명은 180자 이내로 입력하세요.")
+        guard !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, template.name.count <= 60 else {
+            throw StatusError.message("name(이름)을 1~60자로 입력해 주세요.")
         }
-        guard template.unit.count <= 20, template.symbol.count <= 80 else {
-            throw StatusError.message("단위 또는 아이콘 이름이 너무 깁니다.")
+        guard template.subtitle.count <= 180 else {
+            throw StatusError.message("subtitle(설명)을 180자 이하로 줄여 주세요.")
+        }
+        guard template.unit.count <= 20 else {
+            throw StatusError.message("unit(단위)을 20자 이하로 줄여 주세요.")
+        }
+        guard template.symbol.count <= 80 else {
+            throw StatusError.message("symbol(아이콘 이름)을 80자 이하로 줄여 주세요.")
         }
         guard template.refreshInterval.isFinite, (3...86_400).contains(template.refreshInterval) else {
-            throw StatusError.message("새로고침 주기는 3~86,400초로 설정하세요.")
+            throw StatusError.message("refreshInterval(갱신 간격)에 3~86400 사이의 숫자를 넣어 주세요. 단위는 초예요.")
         }
         guard template.multiplier.isFinite, template.multiplier != 0 else {
-            throw StatusError.message("배율은 0이 아닌 유한한 숫자여야 합니다.")
+            throw StatusError.message("multiplier(배율)에 0이 아닌 숫자를 넣어 주세요.")
         }
         if let limit = template.limit, !limit.isFinite || limit <= 0 {
-            throw StatusError.message("한도는 0보다 큰 유한한 숫자여야 합니다.")
+            throw StatusError.message("limit(한도)에 0보다 큰 숫자를 넣어 주세요. 한도가 없으면 null로 쓰세요.")
         }
         if let value = template.manualValue, !value.isFinite || value < 0 {
-            throw StatusError.message("직접 입력한 값은 0 이상의 유한한 숫자여야 합니다.")
+            throw StatusError.message("manualValue(현재 값)에 0 이상의 숫자를 넣어 주세요.")
         }
         guard ["first", "sum"].contains(template.aggregation) else {
-            throw StatusError.message("aggregation은 first 또는 sum이어야 합니다.")
+            throw StatusError.message("aggregation에는 \"first\" 또는 \"sum\"을 넣어 주세요.")
         }
         guard (template.authHeader.isEmpty || validHeaderName(template.authHeader)),
               !transportHeaderNames.contains(template.authHeader.lowercased()),
               !template.authPrefix.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
               template.authPrefix.count <= 100 else {
-            throw StatusError.message("인증 헤더 이름과 접두어를 확인하세요.")
+            throw StatusError.message("authHeader와 authPrefix를 확인해 주세요. 줄바꿈은 넣을 수 없어요.")
         }
         guard template.headers.count <= 20 else {
-            throw StatusError.message("추가 헤더는 최대 20개까지 사용할 수 있습니다.")
+            throw StatusError.message("headers의 항목을 20개 이하로 줄여 주세요.")
         }
         for (key, value) in template.headers {
             guard validHeaderName(key), value.count <= 1_000,
                   !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
-                throw StatusError.message("추가 헤더 형식이 올바르지 않습니다.")
+                throw StatusError.message("headers의 이름과 값을 확인해 주세요. 줄바꿈은 넣을 수 없어요.")
             }
             guard !secretNames.contains(key.lowercased()),
                   key.lowercased() != template.authHeader.lowercased() else {
-                throw StatusError.message("인증 정보는 headers에 넣지 말고 연결 설정의 보안 키 필드를 사용하세요.")
+                throw StatusError.message("headers에서 키와 토큰을 빼 주세요. 편집 화면의 보안 키 칸을 사용하세요.")
             }
             guard !transportHeaderNames.contains(key.lowercased()) else {
-                throw StatusError.message("전송 제어 헤더는 직접 설정할 수 없습니다.")
+                throw StatusError.message("headers에서 전송 제어 항목을 빼 주세요. 앱이 자동으로 설정해요.")
             }
         }
         if !template.link.isEmpty {
-            _ = try checkedURL(template.link, allowVariables: false)
+            do { _ = try checkedURL(template.link, allowVariables: false) }
+            catch { throw StatusError.message("link(바로가기): \(error.localizedDescription)") }
         }
         if template.kind == .http {
-            _ = try checkedURL(template.endpoint, allowVariables: true)
-            _ = try pathComponents(template.valuePath)
-            if !template.limitPath.isEmpty { _ = try pathComponents(template.limitPath) }
+            do { _ = try checkedURL(template.endpoint, allowVariables: true) }
+            catch { throw StatusError.message("endpoint(조회 주소): \(error.localizedDescription)") }
+            do { _ = try pathComponents(template.valuePath) }
+            catch { throw StatusError.message("valuePath(숫자 위치): usage.total처럼 점(.)으로 구분해 주세요.") }
+            if !template.limitPath.isEmpty {
+                do { _ = try pathComponents(template.limitPath) }
+                catch { throw StatusError.message("limitPath(한도 위치): usage.limit처럼 점(.)으로 구분해 주세요.") }
+            }
         }
     }
 
