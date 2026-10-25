@@ -109,27 +109,29 @@ struct SettingsView: View {
                 Text("이 앱의 로그인 창에서 계정을 연결합니다. Codex CLI·Claude Code를 설치할 필요가 없습니다. 웹 조회 경로는 서비스 변경에 영향을 받을 수 있으며, 세션 만료 시 이 앱에서 다시 로그인하면 됩니다.")
                     .font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(4)
             }.padding(20).cardSurface()
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Label("WakaTime", systemImage: "clock").font(.system(size: 14, weight: .semibold))
                     Spacer()
                     Button("연결 설정") {
                         editing = store.templates.first(where: { $0.kind == .wakatime }) ?? StatusStore.wakaTimeTemplate()
                     }.buttonStyle(.borderless).font(.system(size: 11))
+                }.padding(20)
+                Divider().overlay(Palette.line)
+                TrailingSwitchRow(title: "이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
+                    get: { store.useWakaTimeConfiguration },
+                    set: { store.setWakaTimeConfiguration($0) }
+                ))
+                .padding(.horizontal, 20).padding(.vertical, 14)
+                Divider().overlay(Palette.line)
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("~/.wakatime.cfg의 인증 정보로 통계를 조회합니다. 별도로 저장한 개인 OAuth 토큰이 있으면 그 토큰을 우선 사용합니다. 이 옵션을 꺼도 저장한 토큰으로 연결한 항목은 계속 조회됩니다.")
+                    Text("Mac Status는 기록을 읽어 표시합니다. WakaTime 추적 앱은 계속 실행한 채 macOS 메뉴 막대 설정에서 아이콘만 숨길 수 있습니다.")
                 }
-                HStack(spacing: 24) {
-                    Text("이 Mac의 기존 WakaTime 설정 사용").font(.system(size: 12))
-                    Spacer(minLength: 0)
-                    Toggle("이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
-                        get: { store.useWakaTimeConfiguration },
-                        set: { store.setWakaTimeConfiguration($0) }
-                    )).labelsHidden().toggleStyle(.switch).controlSize(.regular).tint(Palette.mint).fixedSize()
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                Text("~/.wakatime.cfg의 인증 정보로 통계를 조회합니다. 별도로 저장한 개인 OAuth 토큰이 있으면 그 토큰을 우선 사용합니다. 이 옵션을 꺼도 저장한 토큰으로 연결한 항목은 계속 조회됩니다.")
-                    .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).lineSpacing(4)
-                Text("Mac Status는 기록을 읽어 표시합니다. WakaTime 추적 앱은 계속 실행한 채 macOS 메뉴 막대 설정에서 아이콘만 숨길 수 있습니다.")
-                    .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).lineSpacing(4)
-            }.padding(20).cardSurface()
+                .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true).lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+            }.frame(maxWidth: .infinity, alignment: .leading).cardSurface()
             VStack(alignment: .leading, spacing: 10) {
                 Label("내 Mac 안에만 저장", systemImage: "lock.shield").font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.mint)
                 Text("항목 설정과 앱 전용 웹 로그인 세션은 이 Mac에, 직접 입력한 API 키·토큰은 macOS 키체인에 저장합니다. Codex·Claude는 다른 앱이나 브라우저의 로그인 정보를 읽지 않습니다. WakaTime 기존 설정은 위 옵션을 켠 경우에만 읽습니다. 연결한 서비스에만 조회 요청을 보내며 분석·추적 서버는 없습니다.")

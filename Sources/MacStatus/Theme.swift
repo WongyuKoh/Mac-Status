@@ -67,6 +67,25 @@ struct AccentButton: View {
     }
 }
 
+struct TrailingSwitchRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 24) {
+            Text(title)
+                .font(.system(size: 12))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden().toggleStyle(.switch).controlSize(.regular)
+                .tint(Palette.mint).fixedSize()
+        }
+        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+    }
+}
+
 enum MetricFormat {
     static func number(_ value: Double, unit: String) -> String {
         if unit == "tokens" {

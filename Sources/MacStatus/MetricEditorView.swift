@@ -168,10 +168,10 @@ struct MetricEditorView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("오늘과 최근 7일의 기록 시간, 프로젝트·언어별 통계를 읽습니다.")
                 .font(.system(size: 11)).foregroundStyle(Palette.muted)
-            Toggle("이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
+            TrailingSwitchRow(title: "이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
                 get: { store.useWakaTimeConfiguration },
                 set: { store.setWakaTimeConfiguration($0) }
-            )).toggleStyle(.switch).tint(Palette.mint).font(.system(size: 12))
+            ))
             Text("켜면 ~/.wakatime.cfg의 인증 정보를 읽어 조회합니다. 아래에 저장한 토큰이 있으면 토큰을 우선 사용합니다. 원본 설정은 변경하지 않습니다.")
                 .font(.system(size: 10)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             Text("개인 OAuth 토큰 · macOS 키체인에 저장").font(.system(size: 11)).foregroundStyle(Palette.muted)
