@@ -12,8 +12,8 @@ enum MetricKind: String, Codable, CaseIterable {
         case .memory: return "메모리"
         case .storage: return "저장공간"
         case .temperature: return "발열 온도"
-        case .http: return "HTTP JSON API"
-        case .manual: return "직접 입력"
+        case .http: return "API 자동 조회"
+        case .manual: return "숫자 수동 입력"
         }
     }
     var isSystem: Bool { [.cpu, .memory, .storage, .temperature].contains(self) }

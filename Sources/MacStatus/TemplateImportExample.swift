@@ -3,7 +3,7 @@ import Foundation
 enum TemplateImportExample: String, CaseIterable, Identifiable {
     case manual, http
     var id: Self { self }
-    var title: String { self == .manual ? "직접 입력 예시" : "API 연결 예시" }
+    var title: String { self == .manual ? "수동 입력 예시" : "API 연결 예시" }
 
     var json: String {
         switch self {
@@ -11,7 +11,7 @@ enum TemplateImportExample: String, CaseIterable, Identifiable {
             return """
             {
               "name": "나의 통계",
-              "subtitle": "직접 입력한 값",
+              "subtitle": "수동 입력한 값",
               "kind": "manual",
               "manualValue": 25,
               "unit": "%",

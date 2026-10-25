@@ -188,7 +188,7 @@ final class StatusStore: ObservableObject {
             guard let value = template.manualValue else { return .setup("현재 값을 입력해 주세요") }
             let key = "manualUpdatedAt.\(template.id.uuidString)"
             let updatedAt = (defaults.object(forKey: key) as? Double).map(Date.init(timeIntervalSince1970:))
-            return .init(value: value, limit: template.limit, subtitle: "직접 입력한 값", updatedAt: updatedAt)
+            return .init(value: value, limit: template.limit, subtitle: "수동 입력한 값", updatedAt: updatedAt)
         }
         if let readMetric = services.readMetric { return await readMetric(template) }
         if template.kind.isSystem { return system.read(template.kind) }

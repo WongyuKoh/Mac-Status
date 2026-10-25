@@ -27,6 +27,19 @@ struct MetricEditorView: View {
     private var isWakaTime: Bool { template.kind == .wakatime }
     private var isBuiltIn: Bool { template.kind.isSystem || isAI || isWakaTime }
     private var isExisting: Bool { store.templates.contains(where: { $0.id == original.id }) }
+    private var editorTitle: String {
+        if template.kind == .http || template.kind == .manual {
+            return template.kind.title + (isExisting ? " 편집" : "")
+        }
+        return isExisting ? "항목 편집" : "새 항목 미리보기"
+    }
+    private var editorDescription: String {
+        switch template.kind {
+        case .manual: return "표시할 숫자와 단위·한도를 직접 입력합니다."
+        case .http: return "API에서 값을 자동으로 가져올 연결을 설정합니다."
+        default: return "표시 스타일과 데이터 연결을 설정합니다."
+        }
+    }
 
     @State private var selectedPage = EditorPage.general
     @State private var showingHeaders = false
@@ -70,8 +83,8 @@ struct MetricEditorView: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(isExisting ? "항목 편집" : "새 항목 미리보기").font(.system(size: 20, weight: .semibold))
-                    Text("표시 스타일과 데이터 연결을 설정합니다.").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    Text(editorTitle).font(.system(size: 20, weight: .semibold))
+                    Text(editorDescription).font(.system(size: 11)).foregroundStyle(Palette.muted)
                 }
                 Spacer()
                 QuietIconButton(symbol: "xmark", label: "닫기") { dismiss() }
@@ -97,11 +110,6 @@ struct MetricEditorView: View {
         }
         .frame(width: 680, height: editorHeight)
         .background(Palette.background).foregroundStyle(Palette.text).preferredColorScheme(.dark)
-        .onChange(of: template.kind) { _, _ in
-            selectedPage = .general
-            error = nil
-            testMessage = nil
-        }
         .onChange(of: pages) { _, available in
             if !available.contains(selectedPage) { selectedPage = .general }
         }
@@ -142,8 +150,7 @@ struct MetricEditorView: View {
                 }
             }
             if !isBuiltIn {
-                editorGroup("데이터 소스") {
-                    StatusSourceSelector(selection: $template.kind)
+                editorGroup(template.kind == .manual ? "숫자 입력" : "표시 단위와 한도") {
                     HStack(alignment: .top, spacing: 14) {
                         StatusTextField("단위", text: $template.unit, prompt: "%, GB, USD 등")
                         StatusTextField("한도 · 선택", text: $limitText, prompt: "없으면 비워 두기")
@@ -162,8 +169,8 @@ struct MetricEditorView: View {
     private var additionalFields: some View {
         editorGroup("추가 설정") {
             HStack(alignment: .top, spacing: 14) {
-                StatusTextField("서비스 바로가기", text: $template.link, prompt: "https://")
-                if !isAI {
+                StatusTextField("서비스 바로가기 · 선택", text: $template.link, prompt: "https://")
+                if !isAI && template.kind != .manual {
                     StatusMenuPicker("새로고침 간격", selection: $template.refreshInterval, options: [
                         (30.0, "30초"), (60.0, "1분"), (300.0, "5분"), (900.0, "15분"), (3600.0, "1시간")
                     ], fallbackTitle: template.refreshInterval.formatted(.number.precision(.fractionLength(0...1))) + "초", symbol: "clock")
@@ -314,8 +321,10 @@ struct MetricEditorView: View {
                 guard let number = Double(valueText), number.isFinite, number >= 0 else { throw StatusError.message("현재 값에 0 이상의 숫자를 입력해 주세요.") }
                 value.manualValue = number
             }
-            guard let multiplier = Double(multiplierText), multiplier.isFinite else { throw StatusError.message("값 배율에 유효한 숫자를 입력해 주세요.") }
-            value.multiplier = multiplier
+            if value.kind == .http {
+                guard let multiplier = Double(multiplierText), multiplier.isFinite else { throw StatusError.message("값 배율에 유효한 숫자를 입력해 주세요.") }
+                value.multiplier = multiplier
+            }
         }
         try TemplateEngine.validate(value)
         return value

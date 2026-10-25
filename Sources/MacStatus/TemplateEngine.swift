@@ -67,7 +67,7 @@ enum TemplateEngine {
         }
         switch root {
         case "kind":
-            return .message("kind(만들기 방식)을 확인해 주세요. 직접 입력은 \"manual\", API 연결은 \"http\"입니다.")
+            return .message("kind(만들기 방식)을 확인해 주세요. 숫자 수동 입력은 \"manual\", API 자동 조회는 \"http\"입니다.")
         case "limit", "manualValue", "multiplier", "refreshInterval":
             return .message("\(labels[root] ?? root)에 숫자를 넣어 주세요. 숫자에는 큰따옴표를 쓰지 않아요.")
         case "headers":

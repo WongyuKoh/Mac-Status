@@ -238,11 +238,11 @@ struct TemplateBuilderView: View {
 
     private var presetContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            builderPreset("HTTP API 통계", subtitle: "URL과 JSON 경로로 자동 갱신", icon: "network", tint: "blue") {
-                onEdit(.init(name: "새 API 통계", subtitle: "나만의 데이터", symbol: "network", tint: "blue", kind: .http, unit: "", limit: nil, authPrefix: ""))
+            builderPreset("API 자동 조회", subtitle: "서비스 API에 연결해 사용량·비용을 자동으로 갱신", icon: "network", tint: "blue") {
+                onEdit(.init(name: "새 API 통계", subtitle: "API에서 자동으로 가져온 값", symbol: "network", tint: "blue", kind: .http, unit: "", limit: nil, authPrefix: ""))
             }
-            builderPreset("직접 입력하는 통계", subtitle: "구독 한도, 예산, 목표를 간편하게", icon: "slider.horizontal.3", tint: "purple") {
-                onEdit(.init(name: "나의 통계", subtitle: "직접 입력", tint: "purple", kind: .manual, manualValue: 0))
+            builderPreset("숫자 수동 입력", subtitle: "현재 값·예산·목표를 직접 입력하고 수정", icon: "square.and.pencil", tint: "purple") {
+                onEdit(.init(name: "새 수동 통계", subtitle: "수동 입력한 값", tint: "purple", kind: .manual, manualValue: 0))
             }
             builderPreset("WakaTime", subtitle: "오늘·최근 7일 기록 시간, 프로젝트·언어 통계", icon: "clock", tint: "blue") {
                 onEdit(StatusStore.wakaTimeTemplate())
