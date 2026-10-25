@@ -146,7 +146,7 @@ AI 호출은 앱에 내장되어 있지 않으므로 별도 생성 API 비용이
 <summary>JSON 예시와 설정 안내 화면 보기</summary>
 <p align="center">
   <img src="docs/images/json-import.png" alt="Mac Status 예시 드롭다운과 JSON 편집 패널 — 기본 예시 템플릿" width="900">
-  <img src="docs/images/json-import-guide.png" alt="Mac Status JSON 설정 안내 — 값 위치 예시를 별도 줄에 표시" width="900">
+  <img src="docs/images/json-import-guide.png" alt="Mac Status JSON 설정 방법과 API 연결 안내" width="900">
 </p>
 </details>
 
