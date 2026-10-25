@@ -272,8 +272,8 @@ struct TemplateBuilderView: View {
 
     private var generatorContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("01  보고 싶은 통계를 적어 주세요").font(.system(size: 13, weight: .medium))
-            TextField("예: 이번 달 Anthropic API 비용을 달러로 보고 싶어", text: $request, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(3...5)
+            StatusMultilineField("01  보고 싶은 통계를 적어 주세요", text: $request,
+                                 prompt: "예: 이번 달 Anthropic API 비용을 달러로 보고 싶어")
             Text("02  생성 프롬프트를 ChatGPT·Claude에 붙여넣으세요").font(.system(size: 13, weight: .medium))
             Text("앱의 템플릿 규격과 요청을 함께 복사합니다. 사용 중인 AI가 반환한 JSON을 ‘JSON 가져오기’에 붙여넣으면 설정을 검토한 뒤 추가할 수 있습니다.")
                 .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
@@ -286,4 +286,38 @@ struct TemplateBuilderView: View {
         }.padding(22).cardSurface()
     }
 
+}
+
+private struct StatusMultilineField: View {
+    let title: String
+    @Binding var text: String
+    let prompt: String
+    @FocusState private var isFocused: Bool
+    @State private var hovering = false
+
+    init(_ title: String, text: Binding<String>, prompt: String) {
+        self.title = title
+        self._text = text
+        self.prompt = prompt
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title).font(.system(size: 13, weight: .medium))
+            TextField(title, text: $text,
+                      prompt: Text(prompt).foregroundStyle(Palette.muted.opacity(0.75)), axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.text)
+                .tint(Palette.mint)
+                .lineLimit(3...5)
+                .focused($isFocused)
+                .focusEffectDisabled()
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(StatusControlSurface(isActive: isFocused, isHovering: hovering))
+                .onHover { hovering = $0 }
+                .accessibilityLabel("보고 싶은 통계")
+        }
+    }
 }

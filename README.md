@@ -51,12 +51,12 @@ Codex·Claude 이름 옆에는 계정에서 확인한 **구독 플랜**을 표�
 
 ### 항목 편집
 
-입력칸은 여백과 민트색 포커스 테두리로 구분합니다. 직접 입력은 단위·한도·현재 값과 추가 설정을 한 화면에서 확인할 수 있습니다. API 항목은 **기본 정보 / API 연결 / 인증**으로 나눕니다. 편집 창은 화면 높이에 맞춰 열리며, 작은 화면에서는 추가 설정을 별도 탭으로 보여 줍니다.
+입력칸은 곡선 모서리와 은은한 음영, 민트색 포커스 테두리로 구분합니다. 드롭다운에는 색상·시계 등의 아이콘과 우측 화살표를 표시하며, 버튼 전체를 눌러 선택할 수 있습니다. 직접 입력은 단위·한도·현재 값과 추가 설정을 한 화면에서 확인할 수 있습니다. API 항목은 **기본 정보 / API 연결 / 인증**으로 나눕니다. 편집 창은 화면 높이에 맞춰 열리며, 작은 화면에서는 추가 설정을 별도 탭으로 보여 줍니다.
 
 <details>
 <summary>새 입력칸과 항목 편집 화면 보기</summary>
 <p align="center">
-  <img src="docs/images/metric-editor.png" alt="Mac Status 스크롤 없는 직접 입력 편집 화면 — 공개용 DEMO" width="680">
+  <img src="docs/images/metric-editor.png" alt="Mac Status 곡선 입력칸과 아이콘 드롭다운 — 직접 입력 예시" width="680">
 </p>
 </details>
 
@@ -145,7 +145,7 @@ AI 호출은 앱에 내장되어 있지 않으므로 별도 생성 API 비용이
 <details>
 <summary>JSON 예시와 설정 안내 화면 보기</summary>
 <p align="center">
-  <img src="docs/images/json-import.png" alt="Mac Status JSON 예시와 단계별 설정 안내 — 공개용 DEMO" width="900">
+  <img src="docs/images/json-import.png" alt="Mac Status 예시 드롭다운과 JSON 편집 패널 — 기본 예시 템플릿" width="900">
   <img src="docs/images/json-import-guide.png" alt="Mac Status JSON 설정 방법 3단계와 API 연결 안내 — 공개용 DEMO" width="900">
 </p>
 </details>

@@ -144,7 +144,7 @@ struct MetricEditorView: View {
                     field("아이콘 · SF Symbols", text: $template.symbol)
                     StatusMenuPicker("포인트 색상", selection: $template.tint, options: [
                         ("mint", "민트"), ("blue", "블루"), ("purple", "라벤더"), ("orange", "오렌지"), ("yellow", "옐로")
-                    ]).frame(width: 160)
+                    ], symbol: "circle.fill", tint: Palette.tint(template.tint)).frame(width: 160)
                 }
             }
             if !isBuiltIn {
@@ -172,7 +172,7 @@ struct MetricEditorView: View {
                 if !isAI {
                     StatusMenuPicker("새로고침 간격", selection: $template.refreshInterval, options: [
                         (30.0, "30초"), (60.0, "1분"), (300.0, "5분"), (900.0, "15분"), (3600.0, "1시간")
-                    ], fallbackTitle: template.refreshInterval.formatted(.number.precision(.fractionLength(0...1))) + "초")
+                    ], fallbackTitle: template.refreshInterval.formatted(.number.precision(.fractionLength(0...1))) + "초", symbol: "clock")
                     .frame(width: 160)
                 }
             }
@@ -183,15 +183,15 @@ struct MetricEditorView: View {
         HStack(spacing: 12) {
             if !isBuiltIn {
                 Button(exported ? "JSON 복사됨" : "JSON 복사") { export() }
-                    .buttonStyle(.bordered).controlSize(.small).font(.system(size: 11))
+                    .buttonStyle(StatusSecondaryButtonStyle())
             }
             if template.kind == .http || isWakaTime {
                 Button(testing ? "연결 확인 중…" : "연결 테스트") { test() }
-                    .buttonStyle(.bordered).controlSize(.small).font(.system(size: 11)).disabled(testing)
+                    .buttonStyle(StatusSecondaryButtonStyle()).disabled(testing)
             }
             Spacer()
-            Button("취소") { dismiss() }.buttonStyle(.bordered).controlSize(.small)
-                .font(.system(size: 12)).keyboardShortcut(.cancelAction)
+            Button("취소") { dismiss() }.buttonStyle(StatusSecondaryButtonStyle())
+                .keyboardShortcut(.cancelAction)
             AccentButton(title: isExisting ? "변경 저장" : "항목 추가", symbol: "checkmark") { save() }.disabled(testing)
         }
         .padding(.horizontal, 24).padding(.vertical, compact ? 12 : 16)
@@ -224,7 +224,7 @@ struct MetricEditorView: View {
             field("값 JSON 경로", text: $template.valuePath)
             StatusTextField("한도 JSON 경로 · 선택", text: $template.limitPath, prompt: "예: usage.limit")
             HStack(alignment: .top, spacing: 14) {
-                StatusMenuPicker("여러 값 처리", selection: $template.aggregation, options: [("first", "단일 값"), ("sum", "합계")])
+                StatusMenuPicker("여러 값 처리", selection: $template.aggregation, options: [("first", "단일 값"), ("sum", "합계")], symbol: "sum")
                 StatusTextField("값 배율", text: $multiplierText, prompt: "센트 → 달러는 0.01")
             }
             Text("숫자 위치는 usage.total처럼 점으로 구분합니다. 여러 숫자를 더하려면 ‘합계’를 선택하세요.")

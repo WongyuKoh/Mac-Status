@@ -7,31 +7,17 @@ struct JSONTemplateImportView: View {
     @State private var message: String?
     @State private var pendingExample: TemplateImportExample?
     @State private var isVisible = false
+    @FocusState private var isEditorFocused: Bool
+    @State private var isEditorHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Text("템플릿 JSON").font(.system(size: 14, weight: .semibold))
-                    Spacer(minLength: 8)
-                    Menu("예시 불러오기") {
-                        ForEach(TemplateImportExample.allCases) { example in
-                            Button(example.title) { loadExample(example) }
-                        }
-                    }.fixedSize()
-                    Button(action: paste) { Label("붙여넣기", systemImage: "doc.on.clipboard") }
-                        .buttonStyle(.bordered).controlSize(.small)
-                }
+                Label("템플릿 JSON", systemImage: "curlybraces")
+                    .font(.system(size: 14, weight: .semibold))
                 Text("처음이라면 아래 예시의 이름과 숫자를 바꿔 보세요.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
-                TextEditor(text: $json)
-                    .font(.system(size: 12, design: .monospaced))
-                    .scrollContentBackground(.hidden).scrollIndicators(.never)
-                    .padding(12).frame(height: 250)
-                    .background(Palette.background, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(message == nil ? Palette.line : Palette.tint("orange").opacity(0.7), lineWidth: 1))
-                    .accessibilityLabel("템플릿 JSON 입력")
+                jsonEditor
                 if let message { errorNotice(message).id("json-import-error") }
                 AccentButton(title: "검증하고 미리보기", symbol: "checkmark.shield", action: validate)
                 Text("아직 저장되지 않습니다. 다음 화면에서 내용을 확인하고 추가할 수 있어요.")
@@ -72,6 +58,51 @@ struct JSONTemplateImportView: View {
         } message: {
             Text("지금 입력한 내용이 선택한 예시로 바뀝니다.")
         }
+    }
+
+    private var jsonEditor: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("JSON")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(1)
+                    .foregroundStyle(Palette.mint)
+                    .padding(.horizontal, 9).padding(.vertical, 6)
+                    .background(Palette.mint.opacity(0.09), in: Capsule())
+                Spacer(minLength: 4)
+                StatusDropdown(title: "예시 불러오기", accessibilityTitle: "예시 불러오기", symbol: "square.stack",
+                               options: TemplateImportExample.allCases.map {
+                    StatusMenuOption(title: $0.title, symbol: $0 == .manual ? "square.and.pencil" : "network")
+                }, isActionMenu: true, expands: false) { index in
+                    loadExample(TemplateImportExample.allCases[index])
+                }
+                .fixedSize()
+                Button(action: paste) { Label("붙여넣기", systemImage: "doc.on.clipboard") }
+                    .buttonStyle(StatusSecondaryButtonStyle())
+            }
+            .padding(12)
+            .background(Palette.raised.opacity(0.35))
+            Rectangle().fill(Palette.line).frame(height: 1).accessibilityHidden(true)
+            TextEditor(text: $json)
+                .font(.system(size: 12, design: .monospaced))
+                .lineSpacing(4)
+                .scrollContentBackground(.hidden).scrollIndicators(.never)
+                .padding(14).frame(height: 268)
+                .focused($isEditorFocused).focusEffectDisabled()
+                .autocorrectionDisabled()
+                .accessibilityLabel("템플릿 JSON 입력")
+        }
+        .background(LinearGradient(colors: [Palette.background, Palette.background.opacity(0.7)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(message != nil ? Palette.tint("orange").opacity(0.8)
+                              : (isEditorFocused ? Palette.mint.opacity(0.65)
+                                 : Color.white.opacity(isEditorHovering ? 0.17 : 0.09)), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+        .onHover { isEditorHovering = $0 }
     }
 
     private func guideStep(_ number: String, title: String, text: String) -> some View {
