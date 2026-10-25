@@ -113,9 +113,13 @@ struct SettingsView: View {
                 HStack {
                     Label("WakaTime", systemImage: "clock").font(.system(size: 14, weight: .semibold))
                     Spacer()
-                    Button("연결 설정") {
+                    Button {
                         editing = store.templates.first(where: { $0.kind == .wakatime }) ?? StatusStore.wakaTimeTemplate()
-                    }.buttonStyle(.borderless).font(.system(size: 11))
+                    } label: {
+                        Label("연결 설정", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(ConnectionActionButtonStyle(tint: Palette.mint))
+                    .accessibilityLabel("WakaTime 연결 설정")
                 }.padding(20)
                 Divider().overlay(Palette.line)
                 TrailingSwitchRow(title: "이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
