@@ -91,7 +91,7 @@ struct SettingsView: View {
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.mint).help("상단바에 표시")
                 }.padding(13).cardSurface(radius: 12)
             }
-            Label("순서는 각 섹션 안에서 적용됩니다. 숨긴 항목은 자동 갱신도 멈춥니다.", systemImage: "info.circle")
+            Label("순서는 각 섹션 안에서 적용됩니다.", systemImage: "info.circle")
                 .font(.system(size: 10)).foregroundStyle(Palette.muted).padding(.top, 5)
         }
     }
