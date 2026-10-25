@@ -98,13 +98,11 @@ struct SettingsView: View {
     private var generalSettings: some View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(spacing: 0) {
-                Toggle(isOn: Binding(get: { store.launchAtLogin }, set: { store.setLoginItem($0) })) {
-                    settingsLabel("로그인 시 자동 실행", description: "Mac을 켜면 상단바에서 바로 시작합니다.")
-                }.toggleStyle(.switch).tint(Palette.mint).padding(20)
+                settingsToggleRow("로그인 시 자동 실행", description: "Mac을 켜면 상단바에서 바로 시작합니다.",
+                                  isOn: Binding(get: { store.launchAtLogin }, set: { store.setLoginItem($0) }))
                 Divider().overlay(Palette.line)
-                Toggle(isOn: Binding(get: { store.showCPUInMenu }, set: { store.setMenuCPU($0) })) {
-                    settingsLabel("상단바에 CPU 사용량 표시", description: "아이콘 옆에 현재 사용률을 표시합니다.")
-                }.toggleStyle(.switch).tint(Palette.mint).padding(20)
+                settingsToggleRow("상단바에 CPU 사용량 표시", description: "아이콘 옆에 현재 사용률을 표시합니다.",
+                                  isOn: Binding(get: { store.showCPUInMenu }, set: { store.setMenuCPU($0) }))
             }.cardSurface()
             VStack(alignment: .leading, spacing: 16) {
                 Text("계정 연결").font(.system(size: 14, weight: .semibold))
@@ -122,10 +120,14 @@ struct SettingsView: View {
                         editing = store.templates.first(where: { $0.kind == .wakatime }) ?? StatusStore.wakaTimeTemplate()
                     }.buttonStyle(.borderless).font(.system(size: 11))
                 }
-                Toggle("이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
-                    get: { store.useWakaTimeConfiguration },
-                    set: { store.setWakaTimeConfiguration($0) }
-                )).toggleStyle(.switch).tint(Palette.mint).font(.system(size: 12))
+                HStack(spacing: 24) {
+                    Text("이 Mac의 기존 WakaTime 설정 사용").font(.system(size: 12))
+                    Spacer(minLength: 0)
+                    Toggle("이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
+                        get: { store.useWakaTimeConfiguration },
+                        set: { store.setWakaTimeConfiguration($0) }
+                    )).labelsHidden().toggleStyle(.switch).controlSize(.regular).tint(Palette.mint).fixedSize()
+                }.frame(maxWidth: .infinity, alignment: .leading)
                 Text("~/.wakatime.cfg의 인증 정보로 통계를 조회합니다. 별도로 저장한 개인 OAuth 토큰이 있으면 그 토큰을 우선 사용합니다. 이 옵션을 꺼도 저장한 토큰으로 연결한 항목은 계속 조회됩니다.")
                     .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).lineSpacing(4)
                 Text("Mac Status는 기록을 읽어 표시합니다. WakaTime 추적 앱은 계속 실행한 채 macOS 메뉴 막대 설정에서 아이콘만 숨길 수 있습니다.")
@@ -141,6 +143,15 @@ struct SettingsView: View {
 
     private func settingsLabel(_ title: String, description: String) -> some View {
         VStack(alignment: .leading, spacing: 6) { Text(title).font(.system(size: 13)); Text(description).font(.system(size: 11)).foregroundStyle(Palette.muted) }
+            .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func settingsToggleRow(_ title: String, description: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .center, spacing: 24) {
+            settingsLabel(title, description: description).frame(maxWidth: .infinity, alignment: .leading)
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
+                .controlSize(.regular).tint(Palette.mint).fixedSize()
+        }.frame(maxWidth: .infinity, minHeight: 36, alignment: .leading).padding(20)
     }
 
     private func connectionRow(_ name: String, connected: Bool, kind: MetricKind) -> some View {
