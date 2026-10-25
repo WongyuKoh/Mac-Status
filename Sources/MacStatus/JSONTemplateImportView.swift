@@ -32,7 +32,15 @@ struct JSONTemplateImportView: View {
                 Divider().overlay(Palette.line)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("자동으로 불러오는 통계가 필요하다면").font(.system(size: 12, weight: .semibold))
-                    Text("‘예시 불러오기’에서 ‘API 연결 예시’를 선택하세요. endpoint는 실제 API 주소, valuePath는 응답에서 숫자가 있는 위치예요. 예: usage.total")
+                    Text("‘예시 불러오기’에서 ‘API 연결 예시’를 선택하세요. endpoint는 실제 API 주소, valuePath는 응답에서 숫자가 있는 위치예요.")
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("예:")
+                        Text("usage.total")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Palette.mint)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityElement(children: .combine)
                     Text("example.com은 형식 설명용 주소예요. 실제 API 주소와 숫자 위치로 바꿔야 조회할 수 있어요.")
                     Text("API 키·토큰은 JSON에 넣지 마세요. 다음 화면의 보안 키 칸에 입력하면 Mac의 키체인에 저장돼요.")
                 }
