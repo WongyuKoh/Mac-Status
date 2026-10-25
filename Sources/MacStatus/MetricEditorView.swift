@@ -116,23 +116,14 @@ struct MetricEditorView: View {
     private var pageSelector: some View {
         HStack(spacing: 4) {
             ForEach(pages, id: \.self) { page in
-                Button { selectedPage = page } label: {
-                    Label(page == .connection && isWakaTime ? "WakaTime 연결" : page.title, systemImage: page.symbol)
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(maxWidth: .infinity, minHeight: 34)
-                        .foregroundStyle(selectedPage == page ? Palette.mint : Palette.muted)
-                        .background(selectedPage == page ? Palette.mint.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(selectedPage == page ? Palette.mint.opacity(0.35) : .clear, lineWidth: 1)
-                            .allowsHitTesting(false))
-                        .contentShape(Rectangle())
+                EditorTabButton(title: page == .connection && isWakaTime ? "WakaTime 연결" : page.title,
+                                symbol: page.symbol, isSelected: selectedPage == page) {
+                    selectedPage = page
                 }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selectedPage == page ? [.isSelected] : [])
             }
         }
         .padding(3).background(Palette.surface, in: RoundedRectangle(cornerRadius: 11))
-        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Palette.line, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Palette.line, lineWidth: 1).allowsHitTesting(false))
         .accessibilityElement(children: .contain).accessibilityLabel("편집 화면")
     }
 
