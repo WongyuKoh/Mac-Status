@@ -201,9 +201,11 @@ enum AIUsageParser {
         case "free": return "Free"
         case "go": return "Go"
         case "plus": return "Plus"
-        case "pro": return "Pro"
-        case "pro_lite", "prolite": return "Pro Lite"
-        case "pro_max", "promax": return "Pro Max"
+        // Match the explicit Pro 100 / Pro 200 / Pro 500 plan identifiers
+        // used by the official Codex client, independent of credit balances.
+        case "pro": return "Pro · $200"
+        case "pro_lite", "prolite": return "Pro · $100"
+        case "pro_max", "promax": return "Pro Max · $500"
         case "team": return "Team"
         case "business": return "Business"
         case "enterprise": return "Enterprise"

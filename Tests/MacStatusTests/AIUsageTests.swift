@@ -3,12 +3,27 @@ import XCTest
 
 final class AIUsageTests: XCTestCase {
     func testCodexPlanNamesComeFromExplicitMetadataEvenWithoutQuota() throws {
-        for (raw, expected) in [("plus", "Plus"), ("pro", "Pro"), ("promax", "Pro Max"), ("pro_max", "Pro Max"), ("business", "Business")] {
+        for (raw, expected) in [
+            ("plus", "Plus"), ("prolite", "Pro · $100"), ("pro_lite", "Pro · $100"),
+            ("pro", "Pro · $200"), ("promax", "Pro Max · $500"), ("pro_max", "Pro Max · $500"),
+            ("business", "Business")
+        ] {
             let payload: [String: Any] = ["plan_type": raw]
             let reading = try AIUsageParser.codexWeb(JSONSerialization.data(withJSONObject: payload))
             XCTAssertEqual(reading.planName, expected)
             XCTAssertEqual(reading.state, .unavailable)
         }
+    }
+
+    func testCodexProTierDoesNotComeFromCreditsOrAdditionalUsageBuckets() throws {
+        let fixture = Data(#"{"plan_type":"promax","credits":{"balance":100},"rate_limit":{"primary_window":{"used_percent":12,"limit_window_seconds":604800}},"additional_rate_limits":[{"plan_type":"prolite","limit_name":"extra","rate_limit":{"primary_window":{"used_percent":90,"limit_window_seconds":18000}}}]}"#.utf8)
+        let reading = try AIUsageParser.codexWeb(fixture)
+        XCTAssertEqual(reading.planName, "Pro Max · $500")
+        XCTAssertEqual(reading.value, 12)
+        XCTAssertEqual(reading.state, .ready)
+        XCTAssertTrue(reading.subtitle.contains("Pro Max · $500"))
+        let creditsOnly = Data(#"{"credits":{"balance":500},"rate_limit":{"primary_window":{"used_percent":12}}}"#.utf8)
+        XCTAssertNil(try AIUsageParser.codexWeb(creditsOnly).planName)
     }
 
     func testCodexPlanBadgeRejectsIdentitiesModelsAndUnknownValues() throws {

@@ -52,7 +52,7 @@ enum DemoData {
                 .init(label: "5시간", value: "32% 사용 · 68% 남음", fraction: 0.32, resetAt: sessionReset, role: .session),
                 .init(label: "주간 전체", value: "44% 사용 · 56% 남음", fraction: 0.44, resetAt: weekReset, role: .weekly),
                 .init(label: "크레딧 잔액", value: "75 크레딧", role: .credits, note: "공개 화면을 위한 예시 수치입니다.")
-            ], planName: "Pro")
+            ], planName: "Pro · $200")
         case .claude:
             return .init(value: 21, limit: 100, subtitle: "데모 · 구독 사용량", updatedAt: now, details: [
                 .init(label: "5시간", value: "21% 사용 · 79% 남음", fraction: 0.21, resetAt: sessionReset, role: .session),
