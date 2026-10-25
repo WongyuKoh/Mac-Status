@@ -10,6 +10,12 @@ struct StatusStoreServices {
     var deleteToken: (UUID) -> Bool = { KeychainStore.delete(id: $0) }
     var hasSavedToken: (UUID) -> Bool = { KeychainStore.read(id: $0) != nil }
     var now: () -> Date = Date.init
+    var loginItemStatus: () -> Bool = { SMAppService.mainApp.status == .enabled }
+    var updateLoginItem: ((Bool) throws -> Bool)? = { enabled in
+        if enabled { try SMAppService.mainApp.register() }
+        else { try SMAppService.mainApp.unregister() }
+        return SMAppService.mainApp.status == .enabled
+    }
 }
 
 @MainActor
@@ -23,7 +29,7 @@ final class StatusStore: ObservableObject {
     @Published var codexConnected = false
     @Published var claudeConnected = false
     @Published var claudeAPIConnected = false
-    @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @Published var launchAtLogin = false
     @Published var showCPUInMenu = true
     @Published var useWakaTimeConfiguration = true
 
@@ -46,6 +52,7 @@ final class StatusStore: ObservableObject {
         self.defaults = defaults
         self.services = services
         automaticallyRefresh = start
+        if services.updateLoginItem != nil { launchAtLogin = services.loginItemStatus() }
         codexConnected = defaults.bool(forKey: "web.codex.connected")
         claudeConnected = defaults.bool(forKey: "web.claude.connected")
         claudeAPIConnected = defaults.bool(forKey: "web.claudeAPI.connected")
@@ -91,6 +98,7 @@ final class StatusStore: ObservableObject {
         }
     }
 
+    var canManageLoginItem: Bool { services.updateLoginItem != nil }
     var visibleTemplates: [MetricTemplate] { templates.filter(\.isEnabled) }
     var systemTemplates: [MetricTemplate] { visibleTemplates.filter { $0.kind.isSystem } }
     var aiTemplates: [MetricTemplate] { visibleTemplates.filter { [.codex, .claude].contains($0.kind) } }
@@ -357,10 +365,12 @@ final class StatusStore: ObservableObject {
     }
 
     func setLoginItem(_ enabled: Bool) {
+        guard let updateLoginItem = services.updateLoginItem else {
+            launchAtLogin = false
+            return
+        }
         do {
-            if enabled { try SMAppService.mainApp.register() }
-            else { try SMAppService.mainApp.unregister() }
-            launchAtLogin = SMAppService.mainApp.status == .enabled
+            launchAtLogin = try updateLoginItem(enabled)
             if enabled && !launchAtLogin { notice = "시스템 설정 → 일반 → 로그인 항목에서 Mac Status를 허용해 주세요." }
         } catch { notice = "로그인 시 실행을 설정하지 못했습니다. 앱을 Applications 폴더에 옮긴 후 다시 시도해 주세요." }
     }

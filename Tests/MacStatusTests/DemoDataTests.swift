@@ -43,4 +43,16 @@ final class DemoDataTests: XCTestCase {
         XCTAssertFalse(DemoData.enabled(arguments: ["MacStatus", "--preview"], bundleIdentifier: "com.kwg.macstatus"))
         XCTAssertFalse(DemoData.enabled(arguments: ["MacStatus"], bundleIdentifier: nil))
     }
+
+    func testDemoCannotEnableOrDisableSystemLoginItems() {
+        let store = DemoData.makeStore()
+        XCTAssertFalse(store.canManageLoginItem)
+        XCTAssertFalse(store.launchAtLogin)
+        store.setLoginItem(true)
+        XCTAssertFalse(store.launchAtLogin)
+        XCTAssertNil(store.notice)
+        store.setLoginItem(false)
+        XCTAssertFalse(store.launchAtLogin)
+        XCTAssertNil(store.notice)
+    }
 }

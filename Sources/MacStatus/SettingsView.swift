@@ -104,6 +104,8 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 settingsToggleRow("로그인 시 자동 실행", description: "Mac을 켜면 상단바에서 바로 시작합니다.",
                                   isOn: Binding(get: { store.launchAtLogin }, set: { store.setLoginItem($0) }))
+                    .disabled(!store.canManageLoginItem)
+                    .help(store.canManageLoginItem ? "Mac을 켜면 자동으로 시작합니다." : "데모에서는 자동 실행을 설정하지 않습니다.")
                 Divider().overlay(Palette.line)
                 settingsToggleRow("상단바에 CPU 사용량 표시", description: "아이콘 옆에 현재 사용률을 표시합니다.",
                                   isOn: Binding(get: { store.showCPUInMenu }, set: { store.setMenuCPU($0) }))

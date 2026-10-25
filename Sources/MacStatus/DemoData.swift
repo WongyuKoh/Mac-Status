@@ -24,13 +24,14 @@ enum DemoData {
             clearSession: { _ in },
             deleteToken: { _ in true },
             hasSavedToken: { _ in false },
-            now: { now }
+            now: { now },
+            loginItemStatus: { false },
+            updateLoginItem: nil
         ))
         store.templates = MetricTemplate.defaults + [StatusStore.wakaTimeTemplate()]
         store.codexConnected = true
         store.claudeConnected = true
         store.claudeAPIConnected = false
-        store.launchAtLogin = false
         store.useWakaTimeConfiguration = false
         for template in store.templates {
             store.readings[template.id] = reading(for: template.kind, now: now)
