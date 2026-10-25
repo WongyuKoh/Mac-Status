@@ -280,24 +280,22 @@ struct MetricEditorView: View {
                               prompt: isExisting ? "변경할 때만 입력 · 기존 토큰 유지" : "waka_tok_…")
             Text("새 연결에는 read_summaries 권한의 개인 OAuth 토큰을 권장합니다. 기존 API 키의 조회 권한이 제한되면 토큰으로 연결하세요.")
                 .font(.system(size: 11)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-            Link(destination: URL(string: "https://wakatime.com/developers#authentication")!) {
+            Button {
+                NSWorkspace.shared.open(URL(string: "https://wakatime.com/developers#authentication")!)
+            } label: {
                 HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.right.square").accessibilityHidden(true)
                     Text("WakaTime 연결 안내 열기")
-                    Image(systemName: "arrow.up.right").accessibilityHidden(true)
                 }
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Palette.mint)
-                .padding(.horizontal, 12)
-                .frame(minHeight: 36)
-                .background(Palette.mint.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Palette.mint.opacity(0.35), lineWidth: 1)
-                        .allowsHitTesting(false)
-                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Palette.background)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 38)
+                .background(Palette.mint, in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain).fixedSize()
+            .padding(.top, 4)
             .help("WakaTime 공식 연결 안내를 브라우저에서 엽니다.")
             if isExisting {
                 Button("저장한 토큰 삭제") {
