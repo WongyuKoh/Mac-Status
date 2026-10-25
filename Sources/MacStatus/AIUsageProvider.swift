@@ -100,14 +100,18 @@ enum AIUsageParser {
         details.append(.init(label: "원격 작업", value: "플랜 한도 공유", role: .cloud,
                              note: "Codex 로컬·클라우드 작업은 플랜 한도를 함께 사용합니다. 원격 작업만의 사용률·작업 수는 이 응답에서 제공되지 않습니다."))
         details.append(codexCreditDetail(selected["credits"]))
+        let plan = codexPlanName(selected["planType"] ?? selected["plan_type"] ?? result["planType"] ?? result["plan_type"])
         guard let mainValue else {
-            return .init(text: "한도 정보 없음", subtitle: "현재 계정에서 사용량 수치를 제공하지 않습니다.", state: .unavailable, details: details)
+            var reading = MetricReading(text: "한도 정보 없음", subtitle: "현재 계정에서 사용량 수치를 제공하지 않습니다.", state: .unavailable, details: details)
+            reading.planName = plan
+            return reading
         }
-        let plan = selected["planType"] as? String
-        return .init(value: mainValue, limit: 100, subtitle: plan.map { "\($0.capitalized) · ChatGPT 계정" } ?? "ChatGPT 계정 · 구독 사용량", details: details)
+        var reading = MetricReading(value: mainValue, limit: 100, subtitle: plan.map { "\($0) · ChatGPT 계정" } ?? "ChatGPT 계정 · 구독 사용량", details: details)
+        reading.planName = plan
+        return reading
     }
 
-    static func claude(_ data: Data, prepaidData: Data? = nil) throws -> MetricReading {
+    static func claude(_ data: Data, prepaidData: Data? = nil, organizationData: Data? = nil) throws -> MetricReading {
         guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw StatusError.message("Claude 응답 형식을 확인할 수 없습니다.")
         }
@@ -177,11 +181,98 @@ enum AIUsageParser {
         details.append(claudeExtraUsageDetail(payload["extra_usage"]))
         if let prepaidData, let balance = claudePrepaidCreditDetail(prepaidData) { details.append(balance) }
         if let cloudCredits = claudeCloudCreditDetail(payload["iguana_necktie"]) { details.append(cloudCredits) }
+        let plan = claudePlanName(organizationData)
         let mainValue = aggregateValues[.session] ?? aggregateValues[.weekly] ?? fallbackValue
         guard let mainValue else {
-            return .init(text: "한도 정보 없음", subtitle: "Claude에서 현재 계정의 한도 수치를 제공하지 않습니다.", state: .unavailable, details: details)
+            var reading = MetricReading(text: "한도 정보 없음", subtitle: "Claude에서 현재 계정의 한도 수치를 제공하지 않습니다.", state: .unavailable, details: details)
+            reading.planName = plan
+            return reading
         }
-        return .init(value: mainValue, limit: 100, subtitle: "Claude 계정 · 구독 사용량", details: details)
+        var reading = MetricReading(value: mainValue, limit: 100, subtitle: "Claude 계정 · 구독 사용량", details: details)
+        reading.planName = plan
+        return reading
+    }
+
+    /// Only documented plan identifiers become badges. Unrecognized values,
+    /// account IDs, monetary balances, and model names never imply a plan.
+    private static func codexPlanName(_ raw: Any?) -> String? {
+        guard let identifier = planIdentifier(raw) else { return nil }
+        switch identifier {
+        case "free": return "Free"
+        case "go": return "Go"
+        case "plus": return "Plus"
+        case "pro": return "Pro"
+        case "pro_lite", "prolite": return "Pro Lite"
+        case "pro_max", "promax": return "Pro Max"
+        case "team": return "Team"
+        case "business": return "Business"
+        case "enterprise": return "Enterprise"
+        case "edu", "education": return "Edu"
+        default: return nil
+        }
+    }
+
+    private static func claudePlanName(_ data: Data?) -> String? {
+        guard let data, data.count <= 65_536,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        // Account membership is scoped to the exact selected organization by
+        // the fixed script. Existing organization metadata remains a fallback.
+        let scopedRecords = [object["account"], object["organization"]].compactMap { $0 as? [String: Any] }
+        let records = scopedRecords.isEmpty ? [object] : scopedRecords
+        let subscriptions = records.compactMap { claudePlanIdentifier(planIdentifier($0["subscription_type"])) }
+        let billings = records.compactMap { claudePlanIdentifier(planIdentifier($0["billing_type"])) }
+        let tiers = records.compactMap { claudePlanIdentifier(planIdentifier($0["rate_limit_tier"])) }
+        let capabilities = records.flatMap { record in
+            (record["capabilities"] as? [String] ?? []).prefix(32).compactMap { claudeCapabilityPlan(planIdentifier($0)) }
+        }
+        let hasTeamSeat = records.contains { ["team_standard", "team_tier_1"].contains(planIdentifier($0["seat_tier"]) ?? "") }
+        // Team seats may carry a Max rate-limit tier. Preserve the selected
+        // organization's explicit business plan instead of relabeling the seat.
+        let organizationPlans = subscriptions + billings + capabilities + tiers.filter { ["Team", "Enterprise"].contains($0) }
+        if organizationPlans.contains("Enterprise") { return "Enterprise" }
+        if hasTeamSeat || organizationPlans.contains("Team") { return "Team" }
+        if let tier = tiers.first { return tier }
+        if let explicit = (subscriptions + billings).first(where: { $0 != "Pro" && $0 != "Free" }) { return explicit }
+        for plan in ["Max 20×", "Max 5×", "Max", "Ultra"] {
+            if capabilities.contains(plan) { return plan }
+        }
+        if let subscription = subscriptions.first { return subscription }
+        if let billing = billings.first { return billing }
+        for plan in ["Pro", "Free"] {
+            if capabilities.contains(plan) { return plan }
+        }
+        return nil
+    }
+
+    private static func claudeCapabilityPlan(_ identifier: String?) -> String? {
+        guard let identifier, identifier.hasPrefix("claude_") else { return nil }
+        return claudePlanIdentifier(identifier)
+    }
+
+    private static func claudePlanIdentifier(_ identifier: String?) -> String? {
+        guard let identifier else { return nil }
+        switch identifier {
+        case "max_20x", "claude_max_20x", "default_claude_max_20x": return "Max 20×"
+        case "max_5x", "claude_max_5x", "default_claude_max_5x": return "Max 5×"
+        case "max", "claude_max", "default_claude_max", "stripe_claude_max_subscription": return "Max"
+        case "pro", "claude_pro", "default_claude_pro", "stripe_claude_pro_subscription": return "Pro"
+        case "team", "claude_team", "default_claude_team", "stripe_claude_team_subscription": return "Team"
+        case "enterprise", "claude_enterprise", "default_claude_enterprise", "stripe_claude_enterprise_subscription": return "Enterprise"
+        case "ultra", "claude_ultra", "default_claude_ultra": return "Ultra"
+        case "free", "claude_free", "default_claude_free": return "Free"
+        default: return nil
+        }
+    }
+
+    private static func planIdentifier(_ value: Any?) -> String? {
+        guard let value = value as? String, value.count <= 80,
+              !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return nil }
+        let identifier = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            .replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
+        guard !identifier.isEmpty, identifier.unicodeScalars.allSatisfy({
+            (97...122).contains(Int($0.value)) || (48...57).contains(Int($0.value)) || $0 == "_"
+        }) else { return nil }
+        return identifier
     }
 
     private static func aggregateRole(minutes: Double?) -> MetricDetailRole {

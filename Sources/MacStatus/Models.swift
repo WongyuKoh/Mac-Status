@@ -75,6 +75,7 @@ struct MetricReading: Equatable {
     var state: MetricState = .ready
     var updatedAt: Date? = Date()
     var details: [MetricDetail] = []
+    var planName: String? = nil
     var fraction: Double? {
         guard let value, let limit, limit > 0 else { return nil }
         return min(max(value / limit, 0), 1)

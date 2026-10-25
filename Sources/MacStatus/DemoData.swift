@@ -51,7 +51,7 @@ enum DemoData {
                 .init(label: "5시간", value: "32% 사용 · 68% 남음", fraction: 0.32, resetAt: sessionReset, role: .session),
                 .init(label: "주간 전체", value: "44% 사용 · 56% 남음", fraction: 0.44, resetAt: weekReset, role: .weekly),
                 .init(label: "크레딧 잔액", value: "75 크레딧", role: .credits, note: "공개 화면을 위한 예시 수치입니다.")
-            ])
+            ], planName: "Pro")
         case .claude:
             return .init(value: 21, limit: 100, subtitle: "데모 · 구독 사용량", updatedAt: now, details: [
                 .init(label: "5시간", value: "21% 사용 · 79% 남음", fraction: 0.21, resetAt: sessionReset, role: .session),
@@ -59,7 +59,7 @@ enum DemoData {
                 .init(label: "API 토큰", value: "USD 120.00", role: .credits, note: "공개 화면을 위한 예시 수치입니다."),
                 .init(label: "클라우드 세션 크레딧", value: "USD 6.50 / 50.00 사용", fraction: 0.13, role: .credits, note: "공개 화면을 위한 예시 수치입니다."),
                 .init(label: "추가 크레딧 사용", value: "비활성화", role: .credits)
-            ])
+            ], planName: "Max 20×")
         case .wakatime:
             return .init(value: 2 + 35.0 / 60, text: "2시간 35분", subtitle: "데모 · 오늘 기록 시간", updatedAt: now, details: [
                 .init(label: "오늘 코딩 시간", value: "2시간 35분", note: "실제 계정이 아닌 예시 데이터입니다."),

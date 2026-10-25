@@ -229,7 +229,8 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
             case 200:
                 let data = try WebAccountPolicy.usageData(from: payload["body"])
                 let prepaidData = try? WebAccountPolicy.usageData(from: payload["prepaidBody"])
-                let reading = try kind == .codex ? AIUsageParser.codexWeb(data) : AIUsageParser.claude(data, prepaidData: prepaidData)
+                let organizationData = try? WebAccountPolicy.usageData(from: payload["organizationBody"])
+                let reading = try kind == .codex ? AIUsageParser.codexWeb(data) : AIUsageParser.claude(data, prepaidData: prepaidData, organizationData: organizationData)
                 isAuthenticated = true
                 if kind == .claude, let organization = payload["selectedOrganization"] as? String,
                    organizations.contains(where: { $0.id == organization }) {
@@ -402,14 +403,47 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
         const usage = await getJSON('/api/organizations/' + encodeURIComponent(selected.id) + '/usage');
         if (usage.status !== 200 || usage.issue) return failure(usage, {organizations, authenticated: usage.status !== 401});
         const result = {status: 200, body: JSON.stringify(usage.json), organizations, selectedOrganization: selected.id, authenticated: true};
+        const selectedSource = list.find(item => item && (item.uuid || item.id) === selected.id) || {};
+        const planCapabilities = new Set(['claude_free', 'claude_pro', 'claude_max', 'claude_max_5x', 'claude_max_20x', 'claude_team', 'claude_enterprise', 'claude_ultra']);
+        function planFields(source) {
+            const fields = {};
+            for (const key of ['rate_limit_tier', 'subscription_type', 'billing_type']) {
+                const value = source && source[key];
+                if (typeof value === 'string' && /^[a-z0-9_ -]{1,80}$/i.test(value)) fields[key] = value;
+            }
+            if (source && Array.isArray(source.capabilities)) {
+                fields.capabilities = source.capabilities.filter(value => typeof value === 'string' && planCapabilities.has(value.toLowerCase()))
+                    .map(value => value.toLowerCase()).slice(0, 16);
+            }
+            return fields;
+        }
+        const plan = {organization: planFields(selectedSource)};
+        result.organizationBody = JSON.stringify(plan);
         // Balance is optional; a restricted billing endpoint must never hide
         // successfully fetched session/weekly usage or invalidate this login.
         const optionalController = new AbortController();
         const optionalTimer = setTimeout(() => optionalController.abort(), 2500);
-        try {
-            const prepaid = await getJSON('/api/organizations/' + encodeURIComponent(selected.id) + '/prepaid/credits', {}, optionalController.signal);
-            if (prepaid.status === 200 && !prepaid.issue) result.prepaidBody = JSON.stringify(prepaid.json);
-        } catch (_) { /* Normal usage remains available without prepaid data. */ }
+        const prepaidTask = (async () => {
+            try {
+                const prepaid = await getJSON('/api/organizations/' + encodeURIComponent(selected.id) + '/prepaid/credits', {}, optionalController.signal);
+                if (prepaid.status === 200 && !prepaid.issue) result.prepaidBody = JSON.stringify(prepaid.json);
+            } catch (_) { /* Normal usage remains available without prepaid data. */ }
+        })();
+        const accountTask = (async () => {
+            try {
+                const account = await getJSON('/api/account', {}, optionalController.signal);
+                const memberships = account.status === 200 && !account.issue && account.json && account.json.memberships;
+                if (!Array.isArray(memberships)) return;
+                const membership = memberships.find(item => item && item.organization && item.organization.uuid === selected.id);
+                if (!membership) return;
+                plan.account = planFields(membership.organization);
+                if (['team_standard', 'team_tier_1'].includes(membership.seat_tier)) plan.account.seat_tier = membership.seat_tier;
+                // Account email, profile fields, IDs and tokens stay in this
+                // JavaScript scope; only allowlisted subscription metadata leaves.
+                result.organizationBody = JSON.stringify(plan);
+            } catch (_) { /* Plan enrichment cannot fail successful quota. */ }
+        })();
+        try { await Promise.all([prepaidTask, accountTask]); }
         finally { clearTimeout(optionalTimer); }
         return result;
     } catch (error) { return {status: error && error.name === 'AbortError' ? 408 : 0}; }

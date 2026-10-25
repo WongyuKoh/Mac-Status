@@ -231,6 +231,9 @@ struct MetricDetailView: View {
             HStack(spacing: 10) {
                 Image(systemName: template.symbol).foregroundStyle(Palette.tint(template.tint)).font(.system(size: 22))
                 Text(template.name).font(.system(size: 19, weight: .semibold))
+                if isAI, let planName = reading.planName {
+                    SubscriptionPlanBadge(name: planName, tint: Palette.tint(template.tint))
+                }
                 Spacer()
                 QuietIconButton(symbol: "xmark", label: "닫기") { dismiss() }
             }

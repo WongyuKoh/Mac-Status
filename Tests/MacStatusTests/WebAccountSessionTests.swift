@@ -244,6 +244,76 @@ final class WebAccountSessionTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testClaudeScriptUsesOnlyTheSelectedMembershipPlanWithoutReturningProfile() throws {
+        let first = "877e7bb6-a4e6-4b97-8c39-e8f155189bb6"
+        let second = "f5d9ecbd-cb2c-4477-9dc0-2c07a353427b"
+        let result = try runScript(.claude, responses: [
+            ["expectedPath": "/api/organizations", "body": [
+                ["uuid": first, "name": "One", "capabilities": ["chat", "claude_max"]],
+                ["uuid": second, "name": "Two", "capabilities": ["chat", "claude_pro"]]
+            ]],
+            ["expectedPath": "/api/organizations/\(second)/usage", "body": ["five_hour": ["utilization": 7]]],
+            ["expectedPath": "/api/organizations/\(second)/prepaid/credits", "status": 403],
+            ["expectedPath": "/api/account", "body": [
+                "email_address": "private-profile@example.com", "user_id": "private-user-identity", "accessToken": "private-fixture-token",
+                "memberships": [
+                    ["organization": ["uuid": first, "rate_limit_tier": "default_claude_max_20x"]],
+                    ["seat_tier": "team_tier_1", "organization": ["uuid": second, "rate_limit_tier": "default_claude_max_5x", "billing_type": "stripe_claude_team_subscription", "name": "private-profile-name"]]
+                ]
+            ]]
+        ], selectedOrganization: second)
+        XCTAssertEqual(result["status"] as? Int, 200)
+        XCTAssertEqual(result["selectedOrganization"] as? String, second)
+        let plan = try WebAccountPolicy.usageData(from: result["organizationBody"])
+        let reading = try AIUsageParser.claude(WebAccountPolicy.usageData(from: result["body"]), organizationData: plan)
+        XCTAssertEqual(reading.planName, "Team")
+        XCTAssertEqual(reading.value, 7)
+        for privateField in ["private-profile@example.com", "private-user-identity", "private-fixture-token", "private-profile-name"] {
+            XCTAssertFalse(String(describing: result).contains(privateField))
+        }
+        XCTAssertFalse(String(data: plan, encoding: .utf8)!.contains("uuid"))
+    }
+
+    @MainActor
+    func testClaudeScriptDoesNotUseAnotherMembershipAndKeepsOrganizationFallback() throws {
+        let selected = "877e7bb6-a4e6-4b97-8c39-e8f155189bb6"
+        let other = "f5d9ecbd-cb2c-4477-9dc0-2c07a353427b"
+        let result = try runScript(.claude, responses: [
+            ["body": [["uuid": selected, "name": "Workspace", "capabilities": ["chat", "claude_pro"]]]],
+            ["body": ["five_hour": ["utilization": 9]]],
+            ["body": ["amount": 1200, "currency": "USD"]],
+            ["body": ["memberships": [["organization": ["uuid": other, "rate_limit_tier": "default_claude_max_20x"]]]]]
+        ])
+        let reading = try AIUsageParser.claude(WebAccountPolicy.usageData(from: result["body"]),
+                                              prepaidData: WebAccountPolicy.usageData(from: result["prepaidBody"]),
+                                              organizationData: WebAccountPolicy.usageData(from: result["organizationBody"]))
+        XCTAssertEqual(reading.planName, "Pro")
+        XCTAssertEqual(reading.value, 9)
+        XCTAssertTrue(reading.details.contains { $0.value == "USD 12.00" })
+    }
+
+    @MainActor
+    func testClaudeScriptOptionalAccountFailuresKeepUsageAndPrepaidBalance() throws {
+        let selected = "877e7bb6-a4e6-4b97-8c39-e8f155189bb6"
+        let failures: [[String: Any]] = [["status": 403], ["status": 404], ["status": 429], ["text": "invalid JSON"], ["throws": true]]
+        for failure in failures {
+            let result = try runScript(.claude, responses: [
+                ["body": [["uuid": selected, "name": "Workspace", "capabilities": ["chat", "raven"]]]],
+                ["body": ["five_hour": ["utilization": 9]]],
+                ["body": ["amount": 1200, "currency": "USD"]], failure
+            ])
+            XCTAssertEqual(result["status"] as? Int, 200)
+            XCTAssertEqual(result["authenticated"] as? Bool, true)
+            let reading = try AIUsageParser.claude(WebAccountPolicy.usageData(from: result["body"]),
+                                                  prepaidData: WebAccountPolicy.usageData(from: result["prepaidBody"]),
+                                                  organizationData: WebAccountPolicy.usageData(from: result["organizationBody"]))
+            XCTAssertEqual(reading.value, 9)
+            XCTAssertNil(reading.planName)
+            XCTAssertTrue(reading.details.contains { $0.value == "USD 12.00" })
+        }
+    }
+
     /// Runs the production script with a deterministic in-memory fetch transport.
     /// JavaScriptCore is a macOS framework; this needs no browser or Node install.
     @MainActor
@@ -264,6 +334,7 @@ final class WebAccountSessionTests: XCTestCase {
         async function fetch(path, options) {
             if (!fixtureQueue.length) throw new Error('Unexpected fixture request');
             const next = fixtureQueue.shift();
+            if (next.expectedPath && path !== next.expectedPath) throw new Error('Unexpected fixture path');
             if (next.throws) throw new Error('Fixture network failure');
             const status = next.status || 200;
             const text = next.text || JSON.stringify(next.body);

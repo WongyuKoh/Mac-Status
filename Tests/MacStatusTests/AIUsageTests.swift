@@ -2,6 +2,66 @@ import XCTest
 @testable import MacStatus
 
 final class AIUsageTests: XCTestCase {
+    func testCodexPlanNamesComeFromExplicitMetadataEvenWithoutQuota() throws {
+        for (raw, expected) in [("plus", "Plus"), ("pro", "Pro"), ("promax", "Pro Max"), ("pro_max", "Pro Max"), ("business", "Business")] {
+            let payload: [String: Any] = ["plan_type": raw]
+            let reading = try AIUsageParser.codexWeb(JSONSerialization.data(withJSONObject: payload))
+            XCTAssertEqual(reading.planName, expected)
+            XCTAssertEqual(reading.state, .unavailable)
+        }
+    }
+
+    func testCodexPlanBadgeRejectsIdentitiesModelsAndUnknownValues() throws {
+        for raw in ["", "unknown_new_plan", "someone@example.com", "877e7bb6-a4e6-4b97-8c39-e8f155189bb6", "gpt-model", "pro\n", String(repeating: "a", count: 81)] {
+            let reading = try AIUsageParser.codexWeb(JSONSerialization.data(withJSONObject: ["plan_type": raw]))
+            XCTAssertNil(reading.planName)
+            XCTAssertFalse(reading.subtitle.contains(raw) && !raw.isEmpty)
+        }
+    }
+
+    func testClaudePlansUseExplicitTierWithoutInferringFromCredits() throws {
+        let usage = Data(#"{"five_hour":{"utilization":21},"iguana_necktie":{"limit_dollars":250,"remaining_dollars":200}}"#.utf8)
+        for (raw, expected) in [("default_claude_pro", "Pro"), ("default_claude_max_5x", "Max 5×"), ("default_claude_max_20x", "Max 20×")] {
+            let organization = try JSONSerialization.data(withJSONObject: ["rate_limit_tier": raw, "capabilities": ["chat", "claude_pro"]])
+            XCTAssertEqual(try AIUsageParser.claude(usage, organizationData: organization).planName, expected)
+        }
+        XCTAssertNil(try AIUsageParser.claude(usage, prepaidData: Data(#"{"amount":50000,"currency":"USD"}"#.utf8)).planName)
+    }
+
+    func testClaudeBusinessPlanWinsOverSeatRateTier() throws {
+        for (metadata, expected) in [
+            (["subscription_type": "team", "rate_limit_tier": "default_claude_max_5x"], "Team"),
+            (["billing_type": "enterprise", "rate_limit_tier": "default_claude_max_20x"], "Enterprise"),
+            (["seat_tier": "team_tier_1", "rate_limit_tier": "default_claude_max_5x"], "Team"),
+            (["billing_type": "stripe_claude_team_subscription", "rate_limit_tier": "default_claude_max_5x"], "Team"),
+            (["seat_tier": "team_standard", "rate_limit_tier": "claude_enterprise"], "Enterprise")
+        ] {
+            let reading = try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: JSONSerialization.data(withJSONObject: metadata))
+            XCTAssertEqual(reading.planName, expected)
+            XCTAssertEqual(reading.state, .unavailable)
+        }
+    }
+
+    func testClaudeMaxCapabilityWinsOverGenericProButChatAndStripeDoNotInferPro() throws {
+        let max = try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: Data(#"{"subscription_type":"pro","capabilities":["chat","claude_pro","claude_max"]}"#.utf8))
+        XCTAssertEqual(max.planName, "Max")
+        XCTAssertEqual(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: Data(#"{"billing_type":"stripe_claude_pro_subscription"}"#.utf8)).planName, "Pro")
+        XCTAssertEqual(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: Data(#"{"billing_type":"stripe_claude_max_subscription"}"#.utf8)).planName, "Max")
+        for metadata in [#"{"billing_type":"stripe","capabilities":["chat","raven"]}"#, #"{"rate_limit_tier":"someone@example.com"}"#, #"{"subscription_type":"new_unknown"}"#, #"{"capabilities":["max","premium","api"]}"#] {
+            XCTAssertNil(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: Data(metadata.utf8)).planName)
+        }
+    }
+
+    func testClaudeAccountTierAndOrganizationFallbackStayScoped() throws {
+        let metadata = Data(#"{"organization":{"capabilities":["chat","claude_pro"]},"account":{"rate_limit_tier":"default_claude_max_20x"}}"#.utf8)
+        XCTAssertEqual(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: metadata).planName, "Max 20×")
+        let business = Data(#"{"organization":{"capabilities":["chat","claude_team"]},"account":{"rate_limit_tier":"default_claude_max_5x"}}"#.utf8)
+        XCTAssertEqual(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: business).planName, "Team")
+        let fallback = Data(#"{"organization":{"capabilities":["claude_pro"]},"account":{}}"#.utf8)
+        XCTAssertEqual(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: fallback).planName, "Pro")
+        XCTAssertNil(try AIUsageParser.claude(Data(#"{}"#.utf8), organizationData: Data("invalid".utf8)).planName)
+    }
+
     func testCodexWebUsageUsesRealDurationsAndResetTimes() throws {
         let fixture = Data(#"{"plan_type":"new_plan","rate_limit":{"primary_window":{"used_percent":42.5,"limit_window_seconds":18000,"reset_at":1800000000},"secondary_window":{"used_percent":68,"limit_window_seconds":604800,"reset_at":1800500000}}}"#.utf8)
         let reading = try AIUsageParser.codexWeb(fixture)

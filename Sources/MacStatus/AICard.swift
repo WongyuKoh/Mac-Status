@@ -16,6 +16,11 @@ struct AICard: View {
                 HStack(spacing: 7) {
                     Image(systemName: template.symbol).font(.system(size: 14)).foregroundStyle(tint)
                     Text(template.name).font(.system(size: 13, weight: .semibold))
+                    if let planName = reading.planName {
+                        SubscriptionPlanBadge(name: planName, tint: tint)
+                    } else if isConnected && [.ready, .unavailable].contains(reading.state) {
+                        SubscriptionPlanBadge(name: "플랜 미제공", tint: Palette.muted)
+                    }
                     Spacer(minLength: 0)
                     if reading.state == .failed {
                         Image(systemName: "exclamationmark.circle").font(.system(size: 11)).foregroundStyle(Palette.tint("orange"))
@@ -91,5 +96,19 @@ struct AICard: View {
         case "클라우드 세션 크레딧": return 2
         default: return 3
         }
+    }
+}
+
+struct SubscriptionPlanBadge: View {
+    let name: String
+    let tint: Color
+
+    var body: some View {
+        Text(name).font(.system(size: 10, weight: .medium)).foregroundStyle(tint)
+            .lineLimit(1).truncationMode(.tail)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(tint.opacity(0.1), in: Capsule())
+            .help("계정에서 확인한 구독 플랜: " + name)
+            .accessibilityLabel("구독 플랜 " + name)
     }
 }
