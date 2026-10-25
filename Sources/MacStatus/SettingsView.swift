@@ -164,7 +164,7 @@ struct SettingsView: View {
 
 struct TemplateBuilderView: View {
     let onEdit: (MetricTemplate) -> Void
-    @State private var mode = 0
+    @State private var mode = TemplateCreationMode.presets
     @State private var request = ""
     @State private var json = ""
     @State private var message: String?
@@ -180,15 +180,11 @@ struct TemplateBuilderView: View {
                         .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
                 }
             }.padding(22).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
-            Picker("만들기 방식", selection: $mode) {
-                Text("프리셋 · 직접 만들기").tag(0)
-                Text("AI로 템플릿 만들기").tag(1)
-                Text("JSON 가져오기").tag(2)
-            }.pickerStyle(.segmented)
+            TemplateCreationModeSelector(selection: $mode)
             switch mode {
-            case 0: presetContent
-            case 1: generatorContent
-            default: importContent
+            case .presets: presetContent
+            case .ai: generatorContent
+            case .json: importContent
             }
             if let message { Text(message).font(.system(size: 11)).foregroundStyle(Palette.tint("orange")).textSelection(.enabled) }
         }
@@ -235,7 +231,7 @@ struct TemplateBuilderView: View {
                 NSPasteboard.general.setString(TemplateEngine.generationPrompt(request: request), forType: .string)
                 copied = true
             }.disabled(request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("03  생성된 JSON 가져오기 →") { mode = 2 }.buttonStyle(.borderless).font(.system(size: 12)).padding(.top, 12)
+            Button("03  생성된 JSON 가져오기 →") { mode = .json }.buttonStyle(.borderless).font(.system(size: 12)).padding(.top, 12)
         }.padding(22).cardSurface()
     }
 
@@ -245,7 +241,7 @@ struct TemplateBuilderView: View {
                 Text("템플릿 JSON").font(.system(size: 13, weight: .medium)); Spacer()
                 Button("클립보드에서 붙여넣기") { json = NSPasteboard.general.string(forType: .string) ?? "" }.buttonStyle(.borderless).font(.system(size: 11))
             }
-            TextEditor(text: $json).font(.system(size: 11, design: .monospaced)).scrollContentBackground(.hidden)
+            TextEditor(text: $json).font(.system(size: 11, design: .monospaced)).scrollContentBackground(.hidden).scrollIndicators(.never)
                 .padding(10).frame(height: 220).background(Palette.background, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.line))
             Text("API 키는 JSON에 넣지 마세요. 검증한 뒤 편집 화면에서 키체인에 별도로 저장합니다.")
