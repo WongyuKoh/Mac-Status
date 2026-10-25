@@ -152,10 +152,50 @@ struct SettingsView: View {
     }
 
     private func connectionRow(_ name: String, connected: Bool, kind: MetricKind) -> some View {
-        HStack { Text(name).font(.system(size: 12)); Spacer(); Text(connected ? "자동 조회 켜짐" : "연결 전").font(.system(size: 11)).foregroundStyle(connected ? Palette.mint : Palette.muted)
-            Button(connected ? "로그인 창" : "연결") { store.connect(kind) }.buttonStyle(.borderless).font(.system(size: 11))
-            if connected { Button("해제") { store.disconnect(kind) }.buttonStyle(.borderless).font(.system(size: 11)) }
-        }
+        HStack(spacing: 16) {
+            Text(name).font(.system(size: 12, weight: .medium))
+            Spacer(minLength: 12)
+            HStack(spacing: 6) {
+                Circle().fill(connected ? Palette.mint : Palette.muted).frame(width: 5, height: 5).accessibilityHidden(true)
+                Text(connected ? "자동 조회 켜짐" : "연결 전").font(.system(size: 11))
+            }
+            .foregroundStyle(connected ? Palette.mint : Palette.muted)
+            .frame(width: 98, alignment: .leading)
+            HStack(spacing: 8) {
+                Button { store.connect(kind) } label: {
+                    Label(connected ? "로그인 창" : "연결", systemImage: "macwindow")
+                }
+                .buttonStyle(ConnectionActionButtonStyle(tint: Palette.mint))
+                .accessibilityLabel("\(name) \(connected ? "로그인 창" : "연결")")
+                if connected {
+                    Button { store.disconnect(kind) } label: {
+                        Label("연결 해제", systemImage: "xmark")
+                    }
+                    .buttonStyle(ConnectionActionButtonStyle(tint: Palette.tint("orange")))
+                    .accessibilityLabel("\(name) 연결 해제")
+                }
+            }.frame(width: 196, alignment: .leading)
+        }.frame(minHeight: 36)
+    }
+}
+
+private struct ConnectionActionButtonStyle: ButtonStyle {
+    let tint: Color
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11, weight: .semibold))
+            .lineLimit(1).fixedSize()
+            .foregroundStyle(tint)
+            .padding(.horizontal, 12)
+            .frame(minWidth: 94, minHeight: 32)
+            .background(tint.opacity(configuration.isPressed ? 0.20 : (hovering ? 0.13 : 0.07)),
+                        in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(tint.opacity(hovering || configuration.isPressed ? 0.65 : 0.32), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .onHover { hovering = $0 }
     }
 }
 
