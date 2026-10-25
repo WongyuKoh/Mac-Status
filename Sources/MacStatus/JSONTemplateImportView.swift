@@ -15,7 +15,7 @@ struct JSONTemplateImportView: View {
             VStack(alignment: .leading, spacing: 14) {
                 Label("템플릿 JSON", systemImage: "curlybraces")
                     .font(.system(size: 14, weight: .semibold))
-                Text("처음이라면 아래 예시의 이름과 숫자를 바꿔 보세요.")
+                Text("아래 JSON 예시를 수정해 원하는 통계 항목을 만들어 보세요.")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
                 jsonEditor
                 if let message { errorNotice(message).id("json-import-error") }
