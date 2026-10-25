@@ -1,0 +1,20 @@
+{
+  "name": "Anthropic API 입력 토큰",
+  "subtitle": "이번 달 · UTC · 비캐시 입력만",
+  "symbol": "number.circle.fill",
+  "tint": "orange",
+  "kind": "http",
+  "unit": "tokens",
+  "limit": null,
+  "endpoint": "https://api.anthropic.com/v1/organizations/usage_report/messages?starting_at={{month_start_iso}}&bucket_width=1d&limit=31",
+  "valuePath": "data.*.results.*.uncached_input_tokens",
+  "aggregation": "sum",
+  "multiplier": 1,
+  "headers": {
+    "anthropic-version": "2023-06-01"
+  },
+  "authHeader": "x-api-key",
+  "authPrefix": "",
+  "refreshInterval": 300,
+  "link": "https://platform.claude.com/usage"
+}

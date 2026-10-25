@@ -1,0 +1,20 @@
+{
+  "name": "Anthropic API 비용",
+  "subtitle": "이번 달 · UTC · Priority Tier 비용 제외",
+  "symbol": "dollarsign.circle.fill",
+  "tint": "orange",
+  "kind": "http",
+  "unit": "USD",
+  "limit": null,
+  "endpoint": "https://api.anthropic.com/v1/organizations/cost_report?starting_at={{month_start_iso}}&bucket_width=1d&limit=31",
+  "valuePath": "data.*.results.*.amount",
+  "aggregation": "sum",
+  "multiplier": 0.01,
+  "headers": {
+    "anthropic-version": "2023-06-01"
+  },
+  "authHeader": "x-api-key",
+  "authPrefix": "",
+  "refreshInterval": 300,
+  "link": "https://platform.claude.com/cost"
+}

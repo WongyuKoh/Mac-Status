@@ -1,0 +1,18 @@
+{
+  "name": "OpenAI API 비용",
+  "subtitle": "이번 달 조직 청구액 · UTC · 구독 요금 제외",
+  "symbol": "dollarsign.circle.fill",
+  "tint": "mint",
+  "kind": "http",
+  "unit": "USD",
+  "limit": null,
+  "endpoint": "https://api.openai.com/v1/organization/costs?start_time={{month_start_unix}}&end_time={{now_unix}}&bucket_width=1d&limit=31",
+  "valuePath": "data.*.results.*.amount.value",
+  "aggregation": "sum",
+  "multiplier": 1,
+  "headers": {},
+  "authHeader": "Authorization",
+  "authPrefix": "Bearer ",
+  "refreshInterval": 300,
+  "link": "https://platform.openai.com/usage"
+}

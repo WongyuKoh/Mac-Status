@@ -1,0 +1,18 @@
+{
+  "name": "OpenAI API 입력 토큰",
+  "subtitle": "이번 달 · UTC · 캐시 포함 · 출력 토큰 제외",
+  "symbol": "number.circle.fill",
+  "tint": "blue",
+  "kind": "http",
+  "unit": "tokens",
+  "limit": null,
+  "endpoint": "https://api.openai.com/v1/organization/usage/completions?start_time={{month_start_unix}}&end_time={{now_unix}}&bucket_width=1d&limit=31",
+  "valuePath": "data.*.results.*.input_tokens",
+  "aggregation": "sum",
+  "multiplier": 1,
+  "headers": {},
+  "authHeader": "Authorization",
+  "authPrefix": "Bearer ",
+  "refreshInterval": 300,
+  "link": "https://platform.openai.com/usage"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "나의 서비스",
+  "subtitle": "내 API 사용량",
+  "symbol": "chart.bar.fill",
+  "tint": "purple",
+  "kind": "http",
+  "unit": "%",
+  "limit": 100,
+  "endpoint": "http://127.0.0.1:8080/usage",
+  "valuePath": "usage.used",
+  "limitPath": "usage.limit",
+  "aggregation": "first",
+  "multiplier": 1,
+  "headers": {},
+  "authHeader": "Authorization",
+  "authPrefix": "Bearer ",
+  "refreshInterval": 60,
+  "link": ""
+}
