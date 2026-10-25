@@ -277,7 +277,6 @@ struct TemplateBuilderView: View {
                 NSPasteboard.general.setString(TemplateEngine.generationPrompt(request: request), forType: .string)
                 copied = true
             }.disabled(request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("03  생성된 JSON 가져오기 →") { mode = .json }.buttonStyle(.borderless).font(.system(size: 12)).padding(.top, 12)
         }.padding(22).cardSurface()
     }
 
