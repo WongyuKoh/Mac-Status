@@ -223,7 +223,7 @@ struct TemplateBuilderView: View {
                 Image(systemName: "square.stack.3d.up").font(.system(size: 28, weight: .light)).foregroundStyle(Palette.mint)
                 VStack(alignment: .leading, spacing: 7) {
                     Text("원하는 통계 보기").font(.system(size: 16, weight: .semibold))
-                    Text("내가 원하는 통계를 자유롭게 추가해 확인할 수 있습니다")
+                    Text("원하는 통계를 자유롭게 추가해 확인할 수 있습니다")
                         .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
                 }
             }.padding(22).frame(maxWidth: .infinity, alignment: .leading).cardSurface()

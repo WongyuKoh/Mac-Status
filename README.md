@@ -127,7 +127,7 @@ Anthropic용 비용·입력 토큰 프리셋도 새 항목 화면에서 추가�
 ## 나만의 항목 만들기
 
 <p align="center">
-  <img src="docs/images/template-builder.png" alt="Mac Status 네이티브 템플릿 생성 화면 — 공개용 DEMO" width="900">
+  <img src="docs/images/template-builder.png" alt="Mac Status 네이티브 템플릿 생성 화면 — 기본 프리셋" width="900">
 </p>
 
 실제 네이티브 앱의 템플릿 생성 화면입니다. 공개용 DEMO 모드로 캡처했습니다. 아이콘과 설명이 있는 세 카드에서 만들기 방식을 선택하고, 민트색 테두리와 체크로 현재 선택을 확인할 수 있습니다.
