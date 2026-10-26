@@ -9,28 +9,39 @@ final class WakaTimeTests: XCTestCase {
     }
     private var today: Date { ISO8601DateFormatter().date(from: "2026-10-25T14:00:00Z")! }
 
-    func testLegacyBasicAuthenticationIsOnlyInHeaderAndDatesUseLocalTimezone() throws {
-        let request = try WakaTimeProvider.request(apiKey: "sample-key", today: today, calendar: calendar)
-        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Basic c2FtcGxlLWtleQ==")
+    func testOAuthAuthenticationIsOnlyInHeaderAndDatesUseLocalTimezone() throws {
+        let request = try WakaTimeProvider.request(accessToken: "waka_tok_sample", today: today, calendar: calendar)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer waka_tok_sample")
         XCTAssertEqual(request.httpMethod, "GET")
         XCTAssertEqual(request.url?.host, "api.wakatime.com")
         let query = Dictionary(uniqueKeysWithValues: URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.map { ($0.name, $0.value!) })
         XCTAssertEqual(query, ["start": "2026-10-19", "end": "2026-10-25", "timezone": "Asia/Seoul"])
-        XCTAssertFalse(request.url!.absoluteString.contains("sample-key"))
+        XCTAssertFalse(request.url!.absoluteString.contains("waka_tok_sample"))
+        XCTAssertNil(query["api_key"])
+        XCTAssertNil(query["access_token"])
         XCTAssertEqual(request.timeoutInterval, 15)
     }
 
     func testOAuthUsesBearerAndRejectsControlCharacters() throws {
         let request = try WakaTimeProvider.request(accessToken: "waka_tok_sample", today: today)
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer waka_tok_sample")
-        for value in ["", " ", "abc\r\nInjected: yes", String(repeating: "a", count: 8_193)] {
-            XCTAssertThrowsError(try WakaTimeProvider.request(apiKey: value))
+        for value in ["", " ", "waka_tok_sample\r\nInjected: yes", "waka_tok_" + String(repeating: "a", count: 8_193)] {
             XCTAssertThrowsError(try WakaTimeProvider.request(accessToken: value))
         }
     }
 
+    func testLegacyKeysNeverProduceASummariesRequest() async {
+        for value in ["sample-key", "00000000-0000-0000-0000-000000000000", "waka_tok_"] {
+            XCTAssertThrowsError(try WakaTimeProvider.request(accessToken: value))
+            let reading = await WakaTimeProvider.fetch(accessToken: value)
+            XCTAssertEqual(reading.state, .needsSetup)
+            XCTAssertNil(reading.value)
+            XCTAssertTrue(reading.subtitle.contains("개인 OAuth 토큰"))
+        }
+    }
+
     func testRedirectNeverSendsAuthorizationOutsideTheOfficialHTTPSOrigin() throws {
-        let original = try WakaTimeProvider.request(apiKey: "sample-key")
+        let original = try WakaTimeProvider.request(accessToken: "waka_tok_sample")
         for url in ["https://example.com/path", "https://api.wakatime.com.evil.test/path", "http://api.wakatime.com/path", "https://api.wakatime.com:444/path", "https://user@api.wakatime.com/path"] {
             XCTAssertNil(WakaTimeProvider.redirectedRequest(URLRequest(url: URL(string: url)!), original: original))
         }

@@ -29,7 +29,7 @@ extension Color {
 extension View {
     func cardSurface(radius: CGFloat = 14) -> some View {
         background(Palette.surface, in: RoundedRectangle(cornerRadius: radius))
-            .overlay(RoundedRectangle(cornerRadius: radius).stroke(Palette.line, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(Palette.line, lineWidth: 1).allowsHitTesting(false))
     }
 }
 
@@ -44,6 +44,7 @@ struct QuietIconButton: View {
                 .foregroundStyle(hovering ? Palette.text : Palette.muted)
                 .frame(width: 29, height: 29)
                 .background(hovering ? Palette.raised : .clear, in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain).help(label).accessibilityLabel(label)
         .onHover { hovering = $0 }
@@ -63,6 +64,7 @@ struct AccentButton: View {
             .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.background)
             .padding(.horizontal, 13).padding(.vertical, 9)
             .background(Palette.mint, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain)
     }
 }

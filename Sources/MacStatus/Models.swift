@@ -19,6 +19,10 @@ enum MetricKind: String, Codable, CaseIterable {
     var isSystem: Bool { [.cpu, .memory, .storage, .temperature].contains(self) }
 }
 
+enum HTTPValueMode: String, Codable, CaseIterable, Hashable {
+    case number, json
+}
+
 struct MetricTemplate: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
@@ -40,6 +44,18 @@ struct MetricTemplate: Codable, Identifiable, Equatable {
     var refreshInterval: Double = 60
     var link: String = ""
     var isEnabled: Bool = true
+    // Optional so existing saved templates decode without changing their IDs.
+    var valueMode: HTTPValueMode? = nil
+    var valueExpression: String? = nil
+    var limitExpression: String? = nil
+
+    var effectiveHTTPValueMode: HTTPValueMode { valueMode ?? .number }
+    var sourceTitle: String { kind == .http && effectiveHTTPValueMode == .json ? "JSON 값 조회" : kind.title }
+    var hasNumericExpressions: Bool {
+        guard kind == .http, effectiveHTTPValueMode == .number else { return false }
+        return !(valueExpression ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || (!limitPath.isEmpty && !(limitExpression ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 
     static var defaults: [MetricTemplate] {
         [

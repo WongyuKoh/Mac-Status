@@ -36,6 +36,41 @@ final class AppUpdaterTests: XCTestCase {
         driver.availability.send(true)
         XCTAssertTrue(updater.canCheckForUpdates)
     }
+
+    func testLatestBuildWinsRegardlessOfFeedOrderDisplayVersionOrDate() {
+        let candidates = [
+            UpdateCandidate(build: "9", display: "99.0.0", published: 3_000),
+            UpdateCandidate(build: "100", display: "1.0.0", published: 1_000),
+            UpdateCandidate(build: "10", display: "2.0.0", published: 2_000)
+        ]
+        for feed in [candidates, Array(candidates.reversed()), [candidates[2], candidates[0], candidates[1]]] {
+            let selected = LatestUpdateSelection.newest(in: feed, newerThan: "8", version: \.build)
+            XCTAssertEqual(selected?.build, "100")
+            XCTAssertEqual(selected?.display, "1.0.0")
+        }
+    }
+
+    func testInstalledAndOlderBuildsNeverProduceAnUpdate() {
+        XCTAssertNil(LatestUpdateSelection.newest(in: ["9", "99", "100"], newerThan: "100", version: { $0 }))
+        XCTAssertNil(LatestUpdateSelection.newest(in: [String](), newerThan: "100", version: { $0 }))
+        XCTAssertEqual(LatestUpdateSelection.newest(in: ["100", "101", "9"], newerThan: "100", version: { $0 }), "101")
+    }
+
+    func testMultiDigitVersionComponentsUseSparkleOrdering() {
+        XCTAssertEqual(LatestUpdateSelection.newest(in: ["0.7.9", "0.7.10", "0.7.2"], newerThan: "0.7.1", version: { $0 }), "0.7.10")
+    }
+
+    func testEqualBuildsKeepTheFirstEligibleItem() {
+        let first = UpdateCandidate(build: "100", display: "first", published: 1_000)
+        let second = UpdateCandidate(build: "100", display: "second", published: 2_000)
+        XCTAssertEqual(LatestUpdateSelection.newest(in: [first, second], newerThan: "99", version: \.build)?.display, "first")
+    }
+}
+
+private struct UpdateCandidate {
+    let build: String
+    let display: String
+    let published: Int
 }
 
 @MainActor

@@ -7,21 +7,6 @@ enum WakaTimeProvider {
 
     static let maximumResponseBytes = 1_048_576
 
-    /// Compatibility with existing plugin keys; new integrations should use a
-    /// read_summaries OAuth access token, as recommended by WakaTime.
-    static func fetch(apiKey: String) async -> MetricReading {
-        let today = Date()
-        do {
-            let credential = try checkedCredential(apiKey)
-            let request = credential.hasPrefix("waka_tok_")
-                ? try request(accessToken: credential, today: today)
-                : try request(apiKey: credential, today: today)
-            return try await fetch(request: request, today: today)
-        }
-        catch StatusError.authentication(let message) { return .setup(message) }
-        catch { return .error(error.localizedDescription) }
-    }
-
     static func fetch(accessToken: String) async -> MetricReading {
         let today = Date()
         do { return try await fetch(request: request(accessToken: accessToken, today: today), today: today) }
@@ -29,12 +14,8 @@ enum WakaTimeProvider {
         catch { return .error(error.localizedDescription) }
     }
 
-    static func request(apiKey: String, today: Date = Date(), calendar: Calendar = .current) throws -> URLRequest {
-        try makeRequest(authorization: "Basic " + Data(try checkedCredential(apiKey).utf8).base64EncodedString(), today: today, calendar: calendar)
-    }
-
     static func request(accessToken: String, today: Date = Date(), calendar: Calendar = .current) throws -> URLRequest {
-        try makeRequest(authorization: "Bearer " + checkedCredential(accessToken), today: today, calendar: calendar)
+        try makeRequest(authorization: "Bearer " + WakaTimeCredential.checkedAccessToken(accessToken), today: today, calendar: calendar)
     }
 
     private static func makeRequest(authorization: String, today: Date, calendar: Calendar) throws -> URLRequest {
@@ -99,7 +80,7 @@ enum WakaTimeProvider {
         case 200: break
         case 202: throw StatusError.message("WakaTime에서 통계를 집계 중입니다. 잠시 후 다시 확인합니다.")
         case 401, 403:
-            throw StatusError.authentication("WakaTime 조회 인증에 실패했습니다. 키의 호환성 또는 read_summaries 권한의 OAuth 토큰을 확인하세요. (\(response.statusCode))")
+            throw StatusError.authentication("개인 OAuth 토큰과 read_summaries 권한을 확인해 주세요. (\(response.statusCode))")
         case 300...399: throw StatusError.message("WakaTime이 다른 서버로 이동을 요청하여 조회를 중단했습니다.")
         case 404: throw StatusError.message("WakaTime 사용량 조회 경로를 찾을 수 없습니다. (404)")
         case 429: throw StatusError.message("WakaTime 요청 한도에 도달했습니다. 잠시 후 다시 확인합니다. (429)")
@@ -177,15 +158,6 @@ enum WakaTimeProvider {
         for (index, row) in valid.prefix(3).enumerated() {
             details.append(.init(label: "\(title) \(index + 1) · \(row.0)", value: duration(row.1), fraction: total > 0 ? min(row.1 / total, 1) : nil))
         }
-    }
-
-    private static func checkedCredential(_ credential: String) throws -> String {
-        let value = credential.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, value.count <= 8_192,
-              !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
-            throw StatusError.authentication("WakaTime 보안 키 또는 조회 토큰을 입력해 주세요.")
-        }
-        return value
     }
 
     private static func seconds(_ value: Any?) -> Double? {

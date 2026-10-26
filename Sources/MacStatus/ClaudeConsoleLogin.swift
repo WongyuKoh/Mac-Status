@@ -84,6 +84,7 @@ private struct ClaudeConsoleLoginView: View {
                 }
             }.padding(18).background(Palette.surface)
         }.background(Palette.background).foregroundStyle(Palette.text).preferredColorScheme(.dark)
+            .acceptsWindowActivationClicks()
             .onDisappear { task?.cancel() }
             .onChange(of: session.isLoading) { _, loading in
                 if loading { message = nil; lastURL = nil }

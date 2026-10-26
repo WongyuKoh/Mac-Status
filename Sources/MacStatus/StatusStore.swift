@@ -31,6 +31,8 @@ final class StatusStore: ObservableObject {
     @Published var claudeAPIConnected = false
     @Published var launchAtLogin = false
     @Published var showCPUInMenu = true
+    @Published private(set) var menuBarMetricID = ""
+    @Published private(set) var menuBarValueMode = MenuBarValueMode.value
     @Published var useWakaTimeConfiguration = true
 
     private lazy var system = SystemMetrics()
@@ -85,6 +87,17 @@ final class StatusStore: ObservableObject {
             defaults.set(true, forKey: "builtins.apiOptIn.v1")
             persist()
         }
+        if let saved = defaults.string(forKey: "menuBar.metricID") {
+            menuBarMetricID = saved
+        } else if let cpu = templates.first(where: { $0.kind == .cpu }) {
+            menuBarMetricID = MenuBarMetricID.primary(cpu.id)
+            defaults.set(menuBarMetricID, forKey: "menuBar.metricID")
+        }
+        menuBarValueMode = defaults.string(forKey: "menuBar.valueMode").flatMap(MenuBarValueMode.init(rawValue:)) ?? .value
+        if let selected = templates.first(where: { MenuBarMetricID.primary($0.id) == menuBarMetricID }),
+           selected.kind == .http, selected.effectiveHTTPValueMode == .json, menuBarValueMode == .percentage {
+            setMenuBarValueMode(.value)
+        }
         if start {
             if services.readMetric == nil {
                 if codexConnected { codexSession.prepare() }
@@ -110,8 +123,43 @@ final class StatusStore: ObservableObject {
         return reading.value
     }
 
+    var menuBarMetricOptions: [MenuBarMetricOption] {
+        var options = MenuBarMetricCatalog.options(for: visibleTemplates, reading: { reading(for: $0) })
+        if !options.contains(where: { $0.id == menuBarMetricID }) {
+            options.insert(.init(id: menuBarMetricID,
+                                 title: menuBarMetricID.isEmpty ? "표시할 항목 선택" : "선택한 항목 · 사용 불가",
+                                 supportsPercentage: menuBarValueMode == .percentage, source: .unavailable), at: 0)
+        }
+        return options
+    }
+
+    var menuBarSupportsPercentage: Bool {
+        menuBarValueMode == .percentage || menuBarMetricOptions.first(where: { $0.id == menuBarMetricID })?.supportsPercentage == true
+    }
+
+    var menuBarPresentation: MenuBarMetricPresentation {
+        guard showCPUInMenu else { return .init(text: "", description: "Mac Status · 상단바 수치 표시 꺼짐") }
+        guard let option = menuBarMetricOptions.first(where: { $0.id == menuBarMetricID }) else {
+            return MenuBarMetricFormat.unavailable(title: "상단바 수치", reason: "표시할 항목을 선택해 주세요.")
+        }
+        switch option.source {
+        case .primary(let id):
+            guard let template = visibleTemplates.first(where: { $0.id == id }) else { break }
+            return MenuBarMetricFormat.primary(template, reading: reading(for: template), mode: menuBarValueMode)
+        case .detail(let id, let role, let label):
+            guard let template = visibleTemplates.first(where: { $0.id == id }) else { break }
+            let current = reading(for: template)
+            let detail = current.details.first { $0.role.rawValue == role && (label == nil || $0.label == label) }
+            return MenuBarMetricFormat.detail(detail, reading: current, title: option.title, mode: menuBarValueMode)
+        case .unavailable: break
+        }
+        return MenuBarMetricFormat.unavailable(title: "상단바 수치", reason: menuBarMetricID.isEmpty
+                                             ? "표시할 항목을 선택해 주세요." : "선택한 항목이 숨겨졌거나 삭제되었습니다. 다른 항목을 선택해 주세요.")
+    }
+
     func reading(for template: MetricTemplate) -> MetricReading {
-        var reading = readings[template.id] ?? .setup(template.kind.isSystem ? "측정 중…" : "연결하면 통계가 표시됩니다")
+        let defaultMessage = template.kind.isSystem ? "측정 중…" : "연결하면 통계가 표시됩니다"
+        var reading = normalizedReading(readings[template.id] ?? .setup(defaultMessage), for: template)
         if template.kind == .claude, let api = visibleTemplates.first(where: { $0.kind == .claudeAPI }),
            let apiReading = readings[api.id], let value = apiReading.value {
             reading.details.append(.init(label: "Console API 잔액", value: MetricFormat.number(value, unit: "USD"), role: .credits,
@@ -123,6 +171,19 @@ final class StatusStore: ObservableObject {
                 return detail
             })
         }
+        return reading
+    }
+
+    /// Raw JSON values have no valid sample when setup, retrieval, or lookup
+    /// fails. Never show a previous value or a synthetic zero in that case.
+    private func normalizedReading(_ reading: MetricReading, for template: MetricTemplate) -> MetricReading {
+        guard template.kind == .http, template.effectiveHTTPValueMode == .json, reading.state != .ready else { return reading }
+        var reading = reading
+        reading.value = nil
+        reading.limit = nil
+        reading.text = "null"
+        reading.updatedAt = nil
+        reading.details = []
         return reading
     }
 
@@ -150,15 +211,18 @@ final class StatusStore: ObservableObject {
                     return (template.id, generation, requestID, result)
                 }
             }
-            for await (id, generation, requestID, result) in group {
+            for await (id, generation, requestID, incoming) in group {
                 // An edited/reconnected metric may already have a newer request.
                 // Completing an obsolete request must not clear the newer marker.
                 guard inFlight[id] == requestID else { continue }
                 inFlight[id] = nil
                 guard let template = templates.first(where: { $0.id == id && $0.isEnabled }),
                       generation == configurationGeneration[id, default: 0] else { continue }
-                // Keep the last successful value visible when a source temporarily fails.
-                if result.state == .failed, var previous = readings[id], previous.updatedAt != nil,
+                let result = normalizedReading(incoming, for: template)
+                let returnsJSONValue = template.kind == .http && template.effectiveHTTPValueMode == .json
+                // Numeric metrics keep their last success on transient failure;
+                // raw JSON values explicitly become null instead.
+                if !returnsJSONValue, result.state == .failed, var previous = readings[id], previous.updatedAt != nil,
                    previous.value != nil || previous.text != nil {
                     previous.state = .failed
                     previous.subtitle = result.subtitle
@@ -166,10 +230,10 @@ final class StatusStore: ObservableObject {
                 } else {
                     readings[id] = result
                 }
-                if result.state == .needsSetup || result.state == .unavailable {
+                if returnsJSONValue || result.state == .needsSetup || result.state == .unavailable {
                     histories[id] = nil
                 }
-                if template.kind != .manual, result.state == .ready, let value = result.value, value.isFinite {
+                if !returnsJSONValue, template.kind != .manual, result.state == .ready, let value = result.value, value.isFinite {
                     var history = histories[id, default: []]
                     history.append(value)
                     histories[id] = Array(history.suffix(30))
@@ -204,13 +268,14 @@ final class StatusStore: ObservableObject {
                 let saved = KeychainStore.read(id: template.id)
                 let credential = try saved ?? (useWakaTimeConfiguration ? WakaTimeCredential.readConfigured() : nil)
                 guard let credential, !credential.isEmpty else {
-                    return .setup("WakaTime 개인 OAuth 토큰을 연결하거나 기존 설정을 사용해 주세요")
+                    return .setup(WakaTimeCredential.tokenRequiredMessage)
                 }
-                return await WakaTimeProvider.fetch(apiKey: credential)
-            } catch { return .error(error.localizedDescription) }
+                return await WakaTimeProvider.fetch(accessToken: credential)
+            } catch StatusError.authentication(let message) { return .setup(message) }
+            catch { return .error(error.localizedDescription) }
         case .http:
             guard !template.endpoint.isEmpty else { return .setup("API 연결을 설정해 주세요") }
-            let token = KeychainStore.read(id: template.id)
+            let token = template.authHeader.isEmpty ? nil : KeychainStore.read(id: template.id)
             if !template.authHeader.isEmpty && (token?.isEmpty ?? true) { return .setup("API 키를 연결해 주세요") }
             do { return try await TemplateEngine.fetch(template, token: token) }
             catch StatusError.authentication(let message) { return .setup(message) }
@@ -289,7 +354,10 @@ final class StatusStore: ObservableObject {
 
     func save(_ template: MetricTemplate, token: String? = nil) throws {
         try TemplateEngine.validate(template)
-        if let token, !token.isEmpty { try KeychainStore.save(token, id: template.id) }
+        if let token, !token.isEmpty {
+            let credential = template.kind == .wakatime ? try WakaTimeCredential.checkedAccessToken(token) : token
+            try KeychainStore.save(credential, id: template.id)
+        }
         let previous = templates.first(where: { $0.id == template.id })
         if template.kind == .manual, template.manualValue != nil,
            previous?.kind != .manual || previous?.manualValue != template.manualValue {
@@ -299,6 +367,10 @@ final class StatusStore: ObservableObject {
         }
         if let index = templates.firstIndex(where: { $0.id == template.id }) { templates[index] = template }
         else { templates.append(template) }
+        if menuBarMetricID == MenuBarMetricID.primary(template.id), menuBarValueMode == .percentage,
+           !MenuBarMetricCatalog.supportsPercentage(template) {
+            setMenuBarValueMode(.value)
+        }
         invalidate(template.id)
         readings[template.id] = nil
         histories[template.id] = nil
@@ -351,6 +423,24 @@ final class StatusStore: ObservableObject {
     func setMenuCPU(_ value: Bool) {
         showCPUInMenu = value
         defaults.set(value, forKey: "showCPUInMenu")
+    }
+
+    func setMenuBarMetric(_ id: String) {
+        let previousID = menuBarMetricID
+        menuBarMetricID = id
+        defaults.set(id, forKey: "menuBar.metricID")
+        let selected = menuBarMetricOptions.first(where: { $0.id == id })
+        if previousID != id, let selected, case .detail(_, let role, nil) = selected.source,
+           [MetricDetailRole.session.rawValue, MetricDetailRole.weekly.rawValue].contains(role) {
+            setMenuBarValueMode(.percentage)
+        } else if menuBarValueMode == .percentage, selected?.supportsPercentage != true {
+            setMenuBarValueMode(.value)
+        }
+    }
+
+    func setMenuBarValueMode(_ mode: MenuBarValueMode) {
+        menuBarValueMode = mode
+        defaults.set(mode.rawValue, forKey: "menuBar.valueMode")
     }
 
     func setWakaTimeConfiguration(_ value: Bool) {

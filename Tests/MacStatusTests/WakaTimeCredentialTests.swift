@@ -23,9 +23,29 @@ final class WakaTimeCredentialTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent(".wakatime.cfg")
         XCTAssertNil(try WakaTimeCredential.readConfigured(at: file))
-        try "[settings]\napi_key = example-token\n".write(to: file, atomically: true, encoding: .utf8)
-        XCTAssertEqual(try WakaTimeCredential.readConfigured(at: file), "example-token")
+        try "[settings]\napi_key = waka_tok_example\n".write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertEqual(try WakaTimeCredential.readConfigured(at: file), "waka_tok_example")
         try Data(repeating: 65, count: 65_537).write(to: file)
         XCTAssertThrowsError(try WakaTimeCredential.readConfigured(at: file))
+    }
+
+    func testPluginConfigurationIsPreservedWhenAnAPIKeyIsRejected() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent(".wakatime.cfg")
+        let original = "[settings]\napi_key = 00000000-0000-0000-0000-000000000000\n"
+        try original.write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try WakaTimeCredential.readConfigured(at: file)) { error in
+            guard case StatusError.authentication = error else { return XCTFail("An old key must request OAuth setup") }
+        }
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), original)
+    }
+
+    func testPersonalTokenValidationDoesNotTreatOtherCredentialsAsOAuth() throws {
+        XCTAssertEqual(try WakaTimeCredential.checkedAccessToken("  waka_tok_example\n"), "waka_tok_example")
+        for value in ["", "sample-key", "waka_tok_", "waka_tok_two words", "waka_tok_a\u{0}b", "Bearer waka_tok_example"] {
+            XCTAssertThrowsError(try WakaTimeCredential.checkedAccessToken(value))
+        }
     }
 }

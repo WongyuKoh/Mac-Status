@@ -31,6 +31,9 @@ final class TemplateImportErrorTests: XCTestCase {
         XCTAssertTrue(failureMessage(#"{"name":25,"kind":"manual"}"#).contains("name"))
         XCTAssertTrue(failureMessage(#"{"name":"내 통계","kind":"manual","headers":false}"#).contains("headers"))
         XCTAssertTrue(failureMessage(#"{"name":"내 통계","kind":"manual","isEnabled":"yes"}"#).contains("true 또는 false"))
+        for value in [#""unsupported""#, "false", "[1]"] {
+            XCTAssertTrue(failureMessage("{\"name\":\"내 통계\",\"kind\":\"http\",\"valueMode\":\(value)}").contains("valueMode"))
+        }
     }
 
     func testFormatErrorsExplainHowToRepairTheInput() {

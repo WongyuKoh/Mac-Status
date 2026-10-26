@@ -24,6 +24,83 @@ final class TemplateEngineTests: XCTestCase {
         XCTAssertFalse(encoded.contains("accessToken"))
     }
 
+    func testLegacyPersistedTemplatesKeepTheirIdentityAndNumericMode() throws {
+        let original = MetricTemplate(id: UUID(uuidString: "89E0D3B1-4761-4C0D-B33C-28D4802708A9")!, name: "기존 API", kind: .http,
+                                      endpoint: "https://example.com/usage", valuePath: "usage.current")
+        let encoded = try JSONEncoder().encode([original])
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("valueMode"))
+        let restored = try JSONDecoder().decode([MetricTemplate].self, from: encoded)
+        XCTAssertEqual(restored, [original])
+        XCTAssertEqual(restored[0].effectiveHTTPValueMode, .number)
+        XCTAssertEqual(try TemplateEngine.decode(TemplateEngine.encode(original)), original)
+    }
+
+    func testJSONValueImportDefaultsToPublicGETAndRoundTripsItsMode() throws {
+        let original = try TemplateEngine.decode(#"{"name":"상태","kind":"http","valueMode":"json","endpoint":"https://example.com/status","valuePath":"A.B.C"}"#)
+        XCTAssertEqual(original.valueMode, .json)
+        XCTAssertEqual(original.effectiveHTTPValueMode, .json)
+        XCTAssertEqual(original.authHeader, "")
+        XCTAssertEqual(original.authPrefix, "")
+        XCTAssertEqual(try TemplateEngine.decode(TemplateEngine.encode(original)), original)
+        XCTAssertEqual(try JSONDecoder().decode(MetricTemplate.self, from: JSONEncoder().encode(original)), original)
+    }
+
+    func testJSONValueModePreservesNumbersStringsBooleansAndCollections() throws {
+        var template = MetricTemplate(name: "값", kind: .http, endpoint: "https://example.com/status", valuePath: "A.B.C", valueMode: .json)
+        // The direct-value mode must not apply numeric-only options left over
+        // from an earlier mode or mistake false, zero or an empty string for null.
+        template.limitPath = "does.not.exist"
+        template.aggregation = "sum"
+        template.multiplier = 100
+        let fixtures = [
+            ("0", "0"), ("42.5", "42.5"), (#""정상""#, "정상"),
+            ("false", "false"), ("true", "true"), (#""""#, #""""#),
+            ("[]", "[]"), (#"{"z":1,"a":2}"#, #"{"a":2,"z":1}"#)
+        ]
+        for (value, expected) in fixtures {
+            let data = Data("{\"A\":{\"B\":{\"C\":\(value)}}}".utf8)
+            let reading = try TemplateEngine.reading(from: data, template: template)
+            XCTAssertEqual(reading.state, .ready)
+            XCTAssertEqual(reading.text, expected)
+            XCTAssertNil(reading.value)
+            XCTAssertNil(reading.limit)
+            XCTAssertNotNil(reading.updatedAt)
+        }
+        template.valuePath = "data.1.status"
+        let reading = try TemplateEngine.reading(from: Data(#"{"data":[{"status":"old"},{"status":"ready"}]}"#.utf8), template: template)
+        XCTAssertEqual(reading.text, "ready")
+    }
+
+    func testJSONMissingNullAndOutOfRangeValuesStayNull() throws {
+        let template = MetricTemplate(name: "값", kind: .http, endpoint: "https://example.com/status", valuePath: "A.B.C", valueMode: .json)
+        for fixture in [#"{}"#, #"{"A":{"B":{"C":null}}}"#, #"{"A":{"B":null}}"#, #"{"A":{"B":[0]}}"#] {
+            let reading = try TemplateEngine.reading(from: Data(fixture.utf8), template: template)
+            XCTAssertEqual(reading.text, "null")
+            XCTAssertEqual(reading.state, .unavailable)
+            XCTAssertNil(reading.value)
+            XCTAssertNil(reading.limit)
+            XCTAssertNil(reading.updatedAt)
+        }
+        XCTAssertNil(try TemplateEngine.extractJSONValue(from: ["data": [1]], path: "data.4"))
+        XCTAssertTrue(try TemplateEngine.extractJSONValue(from: ["data": NSNull()], path: "data") is NSNull)
+    }
+
+    func testJSONValueModeRejectsAmbiguousPathsAndBoundsDisplayValues() throws {
+        var template = MetricTemplate(name: "값", kind: .http, endpoint: "https://example.com/status", valuePath: "data.*.value", valueMode: .json)
+        XCTAssertThrowsError(try TemplateEngine.validate(template))
+        template.valuePath = "value"
+        XCTAssertNoThrow(try TemplateEngine.validate(template))
+        let data = try JSONSerialization.data(withJSONObject: ["value": String(repeating: "a", count: 4_097)])
+        let oversized = try TemplateEngine.reading(from: data, template: template)
+        XCTAssertEqual(oversized.text, "null")
+        XCTAssertEqual(oversized.state, .unavailable)
+        XCTAssertTrue(oversized.subtitle.contains("너무 큽니다"))
+        let invalid = try TemplateEngine.reading(from: Data("private-non-json-response".utf8), template: template)
+        XCTAssertEqual(invalid.text, "null")
+        XCTAssertEqual(invalid.state, .failed)
+        XCTAssertFalse(invalid.subtitle.contains("private-non-json-response"))
+    }
+
     func testCredentialHeadersAndURLCredentialsAreRejected() {
         let cases = [
             #"{"name":"test","kind":"http","endpoint":"https://example.com","valuePath":"value","headers":{"Authorization":"Bearer secret"}}"#,
@@ -211,6 +288,47 @@ final class TemplateEngineTests: XCTestCase {
         _ = try await TemplateEngine.fetch(template, token: "do-not-send-this-test-token")
         XCTAssertNil(server.requests.last?.headers["authorization"])
         XCTAssertNil(server.requests.last?.headers["x-api-key"])
+    }
+
+    func testJSONValueTransportSupportsPublicValuesAndSafelyReturnsNullForFailures() async throws {
+        let secretResponse = "private-fixture-content"
+        let server = try LoopbackHTTPServer { request in
+            switch request.target {
+            case "/ok": return .json(#"{"A":{"B":{"C":"ready"}}}"#)
+            case "/missing": return .json(#"{"A":{}}"#)
+            case "/invalid": return .init(body: Data(secretResponse.utf8))
+            default: return .init(status: 403, body: Data(secretResponse.utf8))
+            }
+        }
+        defer { server.stop() }
+        var template = httpTemplate(server, path: "/ok")
+        template.valuePath = "A.B.C"
+        template.valueMode = .json
+        template.authHeader = ""
+        template.authPrefix = ""
+        let ready = try await TemplateEngine.fetch(template, token: "test-only-unused-secret")
+        XCTAssertEqual(ready.text, "ready")
+        XCTAssertEqual(ready.state, .ready)
+        XCTAssertEqual(server.requests.first?.method, "GET")
+        XCTAssertNil(server.requests.first?.headers["authorization"])
+        for (path, expectedState) in [("/missing", MetricState.unavailable), ("/invalid", .failed), ("/forbidden", .failed)] {
+            template.endpoint = server.url + path
+            let reading = try await TemplateEngine.fetch(template, token: nil)
+            XCTAssertEqual(reading.text, "null")
+            XCTAssertEqual(reading.state, expectedState)
+            XCTAssertNil(reading.value)
+            XCTAssertNil(reading.updatedAt)
+            XCTAssertFalse(reading.subtitle.contains(secretResponse))
+            XCTAssertFalse(reading.subtitle.contains(server.url))
+        }
+        let stopped = try LoopbackHTTPServer { _ in .json(#"{"value":1}"#) }
+        template.endpoint = stopped.url + "/unreachable"
+        stopped.stop()
+        let unavailable = try await TemplateEngine.fetch(template, token: nil)
+        XCTAssertEqual(unavailable.text, "null")
+        XCTAssertEqual(unavailable.state, .failed)
+        XCTAssertNil(unavailable.value)
+        XCTAssertFalse(unavailable.subtitle.contains("unreachable"))
     }
 
     func testHTTPTransportSupportsAnthropicKeyAndDecimalCentCost() async throws {

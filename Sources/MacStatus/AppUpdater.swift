@@ -52,7 +52,9 @@ final class AppUpdater: ObservableObject {
 
 @MainActor
 private final class SparkleUpdateDriver: AppUpdateDriving {
-    private let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    // Sparkle keeps a weak delegate; retain the selection policy for every check.
+    private let selectionPolicy = LatestUpdatePolicy()
+    private lazy var controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: selectionPolicy, userDriverDelegate: nil)
 
     var canCheckForUpdates: Bool { controller.updater.canCheckForUpdates }
     var automaticallyChecksForUpdates: Bool {
@@ -68,5 +70,37 @@ private final class SparkleUpdateDriver: AppUpdateDriving {
     func checkForUpdates() {
         NSApp.activate(ignoringOtherApps: true)
         controller.checkForUpdates(nil)
+    }
+}
+
+enum LatestUpdateSelection {
+    /// Version comparison uses Sparkle's build ordering, never feed position,
+    /// publication date, or a display version. Ties keep the first candidate.
+    static func newest<Item>(in candidates: [Item], newerThan installedBuild: String,
+                             version: (Item) -> String) -> Item? {
+        let comparator = SUStandardVersionComparator.default
+        var selected: Item?
+        for candidate in candidates {
+            let candidateBuild = version(candidate)
+            guard comparator.compareVersion(candidateBuild, toVersion: installedBuild) == .orderedDescending else { continue }
+            if let current = selected,
+               comparator.compareVersion(candidateBuild, toVersion: version(current)) != .orderedDescending { continue }
+            selected = candidate
+        }
+        return selected
+    }
+}
+
+@MainActor
+private final class LatestUpdatePolicy: NSObject, SPUUpdaterDelegate {
+    func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
+        guard let installedBuild = updater.hostBundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              !installedBuild.isEmpty else { return nil }
+        // Sparkle has already applied OS, architecture, channel, rollout and
+        // skipped-version rules. Select only among its eligible top-level items;
+        // download/signature verification and installation stay with Sparkle.
+        // With no newer candidate, nil preserves Sparkle's no-update diagnostics
+        // and its final protection against reinstalling or downgrading.
+        return LatestUpdateSelection.newest(in: appcast.items, newerThan: installedBuild, version: \.versionString)
     }
 }

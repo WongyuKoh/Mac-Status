@@ -4,22 +4,25 @@ struct StatusTextField: View {
     let title: String
     @Binding var text: String
     let prompt: String
+    let error: String?
     @FocusState private var isFocused: Bool
 
-    init(_ title: String, text: Binding<String>, prompt: String = "") {
+    init(_ title: String, text: Binding<String>, prompt: String = "", error: String? = nil) {
         self.title = title
         self._text = text
         self.prompt = prompt
+        self.error = error
     }
 
     var body: some View {
-        StatusInputShell(title: title, isFocused: isFocused) {
+        StatusInputShell(title: title, isFocused: isFocused, error: error) {
             TextField(title, text: $text, prompt: Text(prompt).foregroundStyle(Palette.muted.opacity(0.75)))
                 .textFieldStyle(.plain)
                 .focused($isFocused)
                 .focusEffectDisabled()
                 .autocorrectionDisabled()
-                .accessibilityLabel(title)
+                .accessibilityLabel(error == nil ? title : title + ", 확인 필요")
+                .accessibilityHint(error ?? "")
         }
     }
 }
@@ -28,22 +31,25 @@ struct StatusSecureField: View {
     let title: String
     @Binding var text: String
     let prompt: String
+    let error: String?
     @FocusState private var isFocused: Bool
 
-    init(_ title: String, text: Binding<String>, prompt: String = "") {
+    init(_ title: String, text: Binding<String>, prompt: String = "", error: String? = nil) {
         self.title = title
         self._text = text
         self.prompt = prompt
+        self.error = error
     }
 
     var body: some View {
-        StatusInputShell(title: title, isFocused: isFocused) {
+        StatusInputShell(title: title, isFocused: isFocused, error: error) {
             SecureField(title, text: $text, prompt: Text(prompt).foregroundStyle(Palette.muted.opacity(0.75)))
                 .textFieldStyle(.plain)
                 .focused($isFocused)
                 .focusEffectDisabled()
                 .autocorrectionDisabled()
-                .accessibilityLabel(title)
+                .accessibilityLabel(error == nil ? title : title + ", 확인 필요")
+                .accessibilityHint(error ?? "")
         }
     }
 }
@@ -55,15 +61,20 @@ struct StatusMenuPicker<Value: Hashable>: View {
     let fallbackTitle: String
     let symbol: String
     let tint: Color
+    let error: String?
+    let menuOptions: [StatusMenuOption]?
 
     init(_ title: String, selection: Binding<Value>, options: [(Value, String)], fallbackTitle: String = "선택",
-         symbol: String = "list.bullet", tint: Color = Palette.mint) {
+         symbol: String = "list.bullet", tint: Color = Palette.mint, error: String? = nil,
+         menuOptions: [StatusMenuOption]? = nil) {
         self.title = title
         self._selection = selection
         self.options = options
         self.fallbackTitle = fallbackTitle
         self.symbol = symbol
         self.tint = tint
+        self.error = error
+        self.menuOptions = menuOptions
     }
 
     private var selectedTitle: String {
@@ -72,23 +83,54 @@ struct StatusMenuPicker<Value: Hashable>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Palette.muted)
-                .accessibilityHidden(true)
-            StatusDropdown(title: selectedTitle, accessibilityTitle: title, symbol: symbol, tint: tint,
-                           options: options.map { StatusMenuOption(title: $0.1) },
+            HStack(spacing: 4) {
+                Text(title).foregroundStyle(Palette.muted)
+                if error != nil {
+                    Text("*")
+                        .fontWeight(.bold)
+                        .foregroundStyle(StatusInputFeedback.errorColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .accessibilityHidden(true)
+            StatusDropdown(title: selectedTitle, accessibilityTitle: error.map { title + ", 확인 필요: " + $0 } ?? title,
+                           symbol: symbol, tint: tint,
+                           options: styledOptions,
                            selectedIndex: options.firstIndex(where: { $0.0 == selection })) { index in
                 selection = options[index].0
             }
+            .overlay {
+                if error != nil {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(StatusInputFeedback.errorColor, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            if let error {
+                Text(error)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(StatusInputFeedback.errorColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var styledOptions: [StatusMenuOption] {
+        options.enumerated().map { index, option in
+            let metadata = menuOptions.flatMap { $0.indices.contains(index) ? $0[index] : nil }
+            // Display metadata cannot change the binding's value-to-index map.
+            return StatusMenuOption(title: option.1, symbol: metadata?.symbol ?? symbol, section: metadata?.section)
+        }
     }
 }
 
 struct StatusMenuOption {
     let title: String
     var symbol: String? = nil
+    var section: String? = nil
 }
 
 /// A full-size native popup button keeps menu, keyboard, and accessibility behavior
@@ -150,7 +192,7 @@ private struct StatusNativeMenu: NSViewRepresentable {
     let onFocus: (Bool) -> Void
     @Environment(\.isEnabled) private var isEnabled
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> StatusMenuCoordinator { StatusMenuCoordinator() }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: StatusPopupButton, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? nsView.intrinsicContentSize.width, height: proposal.height ?? 38)
@@ -164,55 +206,168 @@ private struct StatusNativeMenu: NSViewRepresentable {
         button.focusRingType = .none
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.select(_:))
         return button
     }
 
     func updateNSView(_ button: StatusPopupButton, context: Context) {
-        context.coordinator.onSelect = onSelect
-        button.onFocus = onFocus
-        button.isEnabled = isEnabled
-        button.pullsDown = isActionMenu
-        button.setAccessibilityLabel(title)
-        button.setAccessibilityValue(isActionMenu ? "" : displayValue)
-        context.coordinator.optionCount = options.count
-        let signature = [isActionMenu ? "action" : "selection"] + options.map { $0.title + "\u{0}" + ($0.symbol ?? "") }
-        if context.coordinator.optionSignature != signature {
-            let menu = NSMenu(title: title)
-            menu.autoenablesItems = false
-            if isActionMenu {
-                let placeholder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                placeholder.tag = -1
-                menu.addItem(placeholder)
-            }
-            for (index, option) in options.enumerated() {
-                let item = NSMenuItem(title: option.title, action: nil, keyEquivalent: "")
-                item.tag = index
-                if let symbol = option.symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
-                menu.addItem(item)
-            }
-            button.menu = menu
-            context.coordinator.optionSignature = signature
-        }
-        if !isActionMenu, let selectedIndex {
-            if button.indexOfSelectedItem != selectedIndex { button.selectItem(at: selectedIndex) }
-        } else if !isActionMenu { button.select(nil) }
+        context.coordinator.update(button, configuration: .init(
+            title: title, displayValue: displayValue, options: options, selectedIndex: selectedIndex,
+            isActionMenu: isActionMenu, isEnabled: isEnabled, onSelect: onSelect, onFocus: onFocus
+        ))
     }
 
-    final class Coordinator: NSObject {
-        var optionSignature: [String] = []
-        var optionCount = 0
-        var onSelect: ((Int) -> Void)?
-        @objc func select(_ sender: NSPopUpButton) {
-            guard let selected = sender.selectedItem, (0..<optionCount).contains(selected.tag) else { return }
-            onSelect?(selected.tag)
-        }
+    static func dismantleNSView(_ button: StatusPopupButton, coordinator: StatusMenuCoordinator) {
+        coordinator.detach()
     }
 }
 
-private final class StatusPopupButton: NSPopUpButton {
+@MainActor
+final class StatusMenuCoordinator: NSObject, NSMenuDelegate {
+    struct Configuration {
+        let title: String
+        let displayValue: String
+        let options: [StatusMenuOption]
+        let selectedIndex: Int?
+        let isActionMenu: Bool
+        let isEnabled: Bool
+        let onSelect: (Int) -> Void
+        let onFocus: (Bool) -> Void
+
+        var signature: [String] {
+            [title, isActionMenu ? "action" : "selection"]
+                + options.map { $0.title + "\u{0}" + ($0.symbol ?? "") + "\u{0}" + ($0.section ?? "") }
+        }
+    }
+
+    private weak var button: StatusPopupButton?
+    private var installed: Configuration?
+    private var pending: Configuration?
+    private var trackingSnapshot: Configuration?
+    private var installedSignature: [String] = []
+    private var isTracking = false
+    private var isClosing = false
+    private var isDetached = false
+    private var closeGeneration = 0
+
+    func update(_ button: StatusPopupButton, configuration: Configuration) {
+        guard !isDetached else { return }
+        self.button = button
+        // Changing even the selected index or callback while AppKit is tracking
+        // can close the menu or map its old tags onto newly refreshed options.
+        guard !isTracking && !isClosing else { pending = configuration; return }
+        install(configuration, on: button)
+    }
+
+    private func install(_ configuration: Configuration, on button: StatusPopupButton) {
+        installed = configuration
+        button.target = self
+        button.action = #selector(select(_:))
+        button.onFocus = configuration.onFocus
+        button.isEnabled = configuration.isEnabled
+        button.pullsDown = configuration.isActionMenu
+        button.setAccessibilityLabel(configuration.title)
+        button.setAccessibilityValue(configuration.isActionMenu ? "" : configuration.displayValue)
+        if installedSignature != configuration.signature {
+            button.menu?.delegate = nil
+            let menu = NSMenu(title: configuration.title)
+            menu.autoenablesItems = false
+            StatusMenuAppearance.configure(menu)
+            menu.delegate = self
+            if configuration.isActionMenu {
+                let placeholder = NSMenuItem(title: configuration.title, action: nil, keyEquivalent: "")
+                placeholder.tag = -1
+                menu.addItem(placeholder)
+            }
+            var previousSection: String?
+            for (index, option) in configuration.options.enumerated() {
+                if let section = option.section, section != previousSection {
+                    if index > 0 {
+                        let separator = NSMenuItem.separator()
+                        separator.tag = -2
+                        separator.isEnabled = false
+                        menu.addItem(separator)
+                    }
+                    let header = NSMenuItem.sectionHeader(title: section)
+                    header.tag = -2
+                    header.isEnabled = false
+                    menu.addItem(header)
+                }
+                previousSection = option.section
+                let item = NSMenuItem(title: option.title, action: nil, keyEquivalent: "")
+                item.tag = index
+                menu.addItem(item)
+            }
+            button.menu = menu
+            installedSignature = configuration.signature
+        }
+        if !configuration.isActionMenu {
+            if let index = configuration.selectedIndex, configuration.options.indices.contains(index) {
+                if button.selectedItem?.tag != index { button.selectItem(withTag: index) }
+            } else { button.select(nil) }
+        }
+        for item in button.menu?.items ?? [] where configuration.options.indices.contains(item.tag) && !item.isSeparatorItem && !item.isSectionHeader {
+            StatusMenuAppearance.configure(item, option: configuration.options[item.tag],
+                                           isSelected: !configuration.isActionMenu && item.tag == configuration.selectedIndex)
+        }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        guard !isDetached, button?.menu === menu else { return }
+        closeGeneration += 1
+        isClosing = false
+        isTracking = true
+        trackingSnapshot = installed
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        guard !isDetached, button?.menu === menu else { return }
+        isTracking = false
+        isClosing = true
+        closeGeneration += 1
+        let generation = closeGeneration
+        // AppKit can close the menu before sending the popup button's action.
+        // Keep its callback/indices until that action has run, and never change
+        // menu structure from NSMenu's open/close delegate callbacks.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isDetached, !self.isTracking,
+                  self.closeGeneration == generation else { return }
+            self.isClosing = false
+            self.trackingSnapshot = nil
+            if let latest = self.pending, let button = self.button {
+                self.pending = nil
+                self.install(latest, on: button)
+            }
+        }
+    }
+
+    @objc func select(_ sender: NSPopUpButton) {
+        guard !isDetached, sender === button, let configuration = trackingSnapshot ?? installed,
+              let selected = sender.selectedItem, configuration.options.indices.contains(selected.tag) else { return }
+        configuration.onSelect(selected.tag)
+    }
+
+    func detach() {
+        isDetached = true
+        closeGeneration += 1
+        let current = button
+        current?.menu?.delegate = nil
+        current?.target = nil
+        current?.action = nil
+        current?.onFocus = nil
+        if isTracking { current?.menu?.cancelTrackingWithoutAnimation() }
+        button = nil
+        installed = nil
+        pending = nil
+        trackingSnapshot = nil
+        isTracking = false
+        isClosing = false
+    }
+}
+
+final class StatusPopupButton: NSPopUpButton {
     var onFocus: ((Bool) -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -255,7 +410,13 @@ struct StatusSecondaryButtonStyle: ButtonStyle {
 struct StatusControlSurface: View {
     var isActive = false
     var isHovering = false
+    var isInvalid = false
     var radius: CGFloat = 12
+
+    private var borderColor: Color {
+        if isInvalid { return StatusInputFeedback.errorColor }
+        return isActive ? Palette.mint.opacity(0.7) : Color.white.opacity(isHovering ? 0.18 : 0.09)
+    }
 
     var body: some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -265,7 +426,7 @@ struct StatusControlSurface: View {
             ], startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(isActive ? Palette.mint.opacity(0.7) : Color.white.opacity(isHovering ? 0.18 : 0.09), lineWidth: 1)
+                    .strokeBorder(borderColor, lineWidth: 1)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: radius - 1, style: .continuous)
@@ -283,29 +444,50 @@ struct StatusControlSurface: View {
 private struct StatusInputShell<Content: View>: View {
     let title: String
     let isFocused: Bool
+    let error: String?
     let content: Content
     @State private var hovering = false
 
-    init(title: String, isFocused: Bool, @ViewBuilder content: () -> Content) {
+    init(title: String, isFocused: Bool, error: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.isFocused = isFocused
+        self.error = error
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isFocused ? Palette.mint : Palette.muted)
-                .accessibilityHidden(true)
+            HStack(spacing: 4) {
+                Text(title)
+                    .foregroundStyle(isFocused ? Palette.mint : Palette.muted)
+                if error != nil {
+                    Text("*")
+                        .fontWeight(.bold)
+                        .foregroundStyle(StatusInputFeedback.errorColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .accessibilityHidden(true)
             content
                 .font(.system(size: 12))
                 .foregroundStyle(Palette.text)
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                .background(StatusControlSurface(isActive: isFocused, isHovering: hovering))
+                .background(StatusControlSurface(isActive: isFocused, isHovering: hovering, isInvalid: error != nil))
                 .onHover { hovering = $0 }
+            if let error {
+                Text(error)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(StatusInputFeedback.errorColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+enum StatusInputFeedback {
+    static let errorColor = Color(hex: 0xF78282)
 }

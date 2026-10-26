@@ -65,6 +65,19 @@ final class StatusStoreTests: XCTestCase {
         XCTAssertFalse(StatusStore(defaults: preferences.defaults, start: false).useWakaTimeConfiguration)
     }
 
+    func testSavingAWakaTimePluginKeyFailsBeforeChangingTheTemplateOrKeychain() throws {
+        let metric = StatusStore.wakaTimeTemplate()
+        let preferences = try StoreTestPreferences(templates: [metric])
+        defer { preferences.remove() }
+        let store = StatusStore(defaults: preferences.defaults, start: false)
+        var edited = metric
+        edited.name = "Changed"
+        XCTAssertThrowsError(try store.save(edited, token: "sample-plugin-key")) { error in
+            guard case StatusError.authentication = error else { return XCTFail("Plugin keys must require an OAuth token") }
+        }
+        XCTAssertEqual(store.templates.first(where: { $0.id == metric.id })?.name, metric.name)
+    }
+
     func testPreferencesUseTheInjectedStore() async throws {
         let preferences = try StoreTestPreferences(templates: [])
         defer { preferences.remove() }
@@ -149,6 +162,143 @@ final class StatusStoreTests: XCTestCase {
         XCTAssertEqual(store.reading(for: metric).value, 5)
         XCTAssertEqual(store.histories[metric.id], [5])
         XCTAssertTrue(store.codexConnected)
+    }
+
+    func testJSONValuesBecomeNullAfterFailureOrMissingAndRecoverWithoutHistory() async throws {
+        var metric = publicMetric(endpoint: "https://example.com/status")
+        metric.valueMode = .json
+        let preferences = try StoreTestPreferences(templates: [metric])
+        defer { preferences.remove() }
+        let firstSample = Date(timeIntervalSince1970: 100)
+        let restoredSample = Date(timeIntervalSince1970: 200)
+        var queue: [MetricReading] = [
+            .init(limit: 100, text: "online", subtitle: "sample", updatedAt: firstSample,
+                  details: [.init(label: "old detail", value: "old")]),
+            .error("network interrupted"),
+            .init(text: "online again", updatedAt: restoredSample),
+            .init(subtitle: "JSON 경로에 값이 없습니다.", state: .unavailable),
+            .setup("API 키를 연결해 주세요"),
+            .init(text: "0", updatedAt: restoredSample)
+        ]
+        let store = StatusStore(defaults: preferences.defaults, start: false,
+                                services: .init(readMetric: { _ in queue.removeFirst() }))
+        store.histories[metric.id] = [10, 20]
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).text, "online")
+        XCTAssertNil(store.histories[metric.id])
+
+        await store.refresh(force: true)
+        let failed = store.reading(for: metric)
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.text, "null")
+        XCTAssertNil(failed.value)
+        XCTAssertNil(failed.limit)
+        XCTAssertNil(failed.updatedAt)
+        XCTAssertTrue(failed.details.isEmpty)
+        XCTAssertEqual(failed.subtitle, "network interrupted")
+        XCTAssertEqual(store.readings[metric.id]?.text, "null")
+        XCTAssertNil(store.readings[metric.id]?.updatedAt, "The cache must also discard the last sample")
+        XCTAssertNil(store.histories[metric.id])
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).text, "online again")
+        XCTAssertEqual(store.reading(for: metric).updatedAt, restoredSample)
+        XCTAssertEqual(store.reading(for: metric).state, .ready)
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).text, "null")
+        XCTAssertNil(store.reading(for: metric).updatedAt)
+        XCTAssertEqual(store.reading(for: metric).state, .unavailable)
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).text, "null")
+        XCTAssertNil(store.reading(for: metric).value)
+        XCTAssertEqual(store.reading(for: metric).state, .needsSetup)
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).text, "0", "A real zero is a value, not a missing result")
+        XCTAssertEqual(store.reading(for: metric).state, .ready)
+        XCTAssertNil(store.histories[metric.id])
+    }
+
+    func testUnconfiguredJSONValueShowsNullWithoutAccessingANetworkOrCredential() async throws {
+        var metric = publicMetric(endpoint: "")
+        metric.valueMode = .json
+        let preferences = try StoreTestPreferences(templates: [metric])
+        defer { preferences.remove() }
+        let store = StatusStore(defaults: preferences.defaults, start: false)
+        XCTAssertEqual(store.reading(for: metric).text, "null")
+        XCTAssertNil(store.reading(for: metric).value)
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).text, "null")
+        XCTAssertEqual(store.reading(for: metric).subtitle, "API 연결을 설정해 주세요")
+        XCTAssertNil(store.reading(for: metric).updatedAt)
+        XCTAssertNil(store.histories[metric.id])
+    }
+
+    func testNumericHTTPFailurePreservesItsLastSuccessfulValue() async throws {
+        let metric = publicMetric(endpoint: "https://example.com/usage")
+        let preferences = try StoreTestPreferences(templates: [metric])
+        defer { preferences.remove() }
+        let sampledAt = Date(timeIntervalSince1970: 100)
+        var queue: [MetricReading] = [.init(value: 42, limit: 100, updatedAt: sampledAt), .error("network interrupted")]
+        let store = StatusStore(defaults: preferences.defaults, start: false,
+                                services: .init(readMetric: { _ in queue.removeFirst() }))
+        await store.refresh(force: true)
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).value, 42)
+        XCTAssertEqual(store.reading(for: metric).updatedAt, sampledAt)
+        XCTAssertEqual(store.reading(for: metric).state, .failed)
+        XCTAssertEqual(store.histories[metric.id], [42])
+    }
+
+    func testCalculationNullReplacesCachedSuccessClearsHistoryAndRecoversIncludingZero() async throws {
+        var metric = publicMetric(endpoint: "https://example.com/usage")
+        metric.valueExpression = "value / (value - 2) + 0"
+        let preferences = try StoreTestPreferences(templates: [metric])
+        defer { preferences.remove() }
+        func reading(_ value: Int) throws -> MetricReading {
+            try TemplateEngine.reading(from: Data("{\"value\":\(value)}".utf8), template: metric)
+        }
+        var queue: [MetricReading] = [
+            try reading(4), .error("network interrupted"), try reading(2), try reading(6), try reading(0)
+        ]
+        let store = StatusStore(defaults: preferences.defaults, start: false,
+                                services: .init(readMetric: { _ in queue.removeFirst() }))
+
+        await store.refresh(force: true)
+        let sampledAt = store.reading(for: metric).updatedAt
+        XCTAssertEqual(store.reading(for: metric).value, 2)
+        XCTAssertEqual(store.histories[metric.id], [2])
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).value, 2, "A transient network failure still preserves the last numeric sample")
+        XCTAssertEqual(store.reading(for: metric).updatedAt, sampledAt)
+        XCTAssertEqual(store.reading(for: metric).state, .failed)
+        XCTAssertEqual(store.histories[metric.id], [2])
+
+        await store.refresh(force: true)
+        let unavailable = store.reading(for: metric)
+        XCTAssertEqual(unavailable.state, .unavailable)
+        XCTAssertEqual(unavailable.text, "null")
+        XCTAssertNil(unavailable.value)
+        XCTAssertNil(unavailable.limit)
+        XCTAssertNil(unavailable.updatedAt)
+        XCTAssertTrue(unavailable.details.isEmpty)
+        XCTAssertEqual(store.readings[metric.id]?.text, "null", "The cache must also discard the previous successful result")
+        XCTAssertNil(store.histories[metric.id])
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).state, .ready)
+        XCTAssertEqual(store.reading(for: metric).value, 1.5)
+        XCTAssertNil(store.reading(for: metric).text)
+        XCTAssertEqual(store.histories[metric.id], [1.5])
+
+        await store.refresh(force: true)
+        XCTAssertEqual(store.reading(for: metric).state, .ready)
+        XCTAssertEqual(store.reading(for: metric).value, 0, "A calculated zero must not become null")
+        XCTAssertNil(store.reading(for: metric).text)
+        XCTAssertEqual(store.histories[metric.id], [1.5, 0])
     }
 
     func testRepeatedTransientFailuresPreserveTheLastSuccessTimestamp() async throws {

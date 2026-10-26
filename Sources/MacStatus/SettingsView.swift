@@ -40,6 +40,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 840, idealWidth: 900, minHeight: 650, idealHeight: 730)
         .background(Palette.background).foregroundStyle(Palette.text).preferredColorScheme(.dark)
+        .acceptsWindowActivationClicks()
         .sheet(item: $editing) { template in MetricEditorView(store: store, original: template) }
         .alert("항목을 삭제할까요?", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } })) {
             Button("취소", role: .cancel) { removal = nil }
@@ -70,6 +71,7 @@ struct SettingsView: View {
                 .foregroundStyle(selectedTab == tab ? Palette.mint : Palette.muted)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(11)
                 .background(selectedTab == tab ? Palette.mint.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain)
     }
 
@@ -82,7 +84,7 @@ struct SettingsView: View {
                         .frame(width: 38, height: 38).background(Palette.tint(template.tint).opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 5) {
                         Text(template.name).font(.system(size: 13, weight: .medium))
-                        Text(template.kind.title + " · " + store.reading(for: template).subtitle).font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(1)
+                        Text(template.sourceTitle + " · " + store.reading(for: template).subtitle).font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(1)
                     }
                     Spacer(minLength: 5)
                     QuietIconButton(symbol: "arrow.up", label: "앞으로 이동") { store.move(template.id, by: -1) }
@@ -107,10 +109,8 @@ struct SettingsView: View {
                                   isOn: Binding(get: { store.launchAtLogin }, set: { store.setLoginItem($0) }))
                     .disabled(!store.canManageLoginItem)
                     .help(store.canManageLoginItem ? "Mac을 켜면 자동으로 시작합니다." : "데모에서는 자동 실행을 설정하지 않습니다.")
-                Divider().overlay(Palette.line)
-                settingsToggleRow("상단바에 CPU 사용량 표시", description: "아이콘 옆에 현재 사용률을 표시합니다.",
-                                  isOn: Binding(get: { store.showCPUInMenu }, set: { store.setMenuCPU($0) }))
             }.cardSurface()
+            menuBarSettings
             updateSettings
             VStack(alignment: .leading, spacing: 16) {
                 Text("계정 연결").font(.system(size: 14, weight: .semibold))
@@ -133,14 +133,15 @@ struct SettingsView: View {
                     .accessibilityLabel("WakaTime 연결 설정")
                 }.padding(20)
                 Divider().overlay(Palette.line)
-                TrailingSwitchRow(title: "이 Mac의 기존 WakaTime 설정 사용", isOn: Binding(
+                TrailingSwitchRow(title: "기존 설정의 개인 OAuth 토큰 사용", isOn: Binding(
                     get: { store.useWakaTimeConfiguration },
                     set: { store.setWakaTimeConfiguration($0) }
                 ))
                 .padding(.horizontal, 20).padding(.vertical, 14)
                 Divider().overlay(Palette.line)
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("~/.wakatime.cfg의 인증 정보로 통계를 조회합니다. 별도로 저장한 개인 OAuth 토큰이 있으면 그 토큰을 우선 사용합니다. 이 옵션을 꺼도 저장한 토큰으로 연결한 항목은 계속 조회됩니다.")
+                    Text("조회에는 read_summaries 권한의 개인 OAuth 토큰이 필요합니다. 연결 설정에서 발급 페이지를 열고 토큰을 저장하세요. 기존 API 키로는 통계를 조회하지 않습니다.")
+                    Text("이 옵션은 ~/.wakatime.cfg에 개인 OAuth 토큰이 있을 때만 사용합니다. 별도로 저장한 토큰을 우선하며, 이 옵션을 꺼도 저장한 토큰은 계속 사용합니다. 기존 설정과 추적용 API 키는 변경하지 않습니다.")
                     Text("Mac Status는 기록을 읽어 표시합니다. WakaTime 추적 앱은 계속 실행한 채 macOS 메뉴 막대 설정에서 아이콘만 숨길 수 있습니다.")
                 }
                 .font(.system(size: 11)).foregroundStyle(Palette.muted)
@@ -148,6 +149,47 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading).padding(20)
             }.frame(maxWidth: .infinity, alignment: .leading).cardSurface()
         }
+    }
+
+    private var menuBarSettings: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            settingsToggleRow("상단바 수치 표시", description: "아이콘 옆에 원하는 통계 값을 표시합니다.",
+                              isOn: Binding(get: { store.showCPUInMenu }, set: { store.setMenuCPU($0) }))
+            if store.showCPUInMenu {
+                Divider().overlay(Palette.line)
+                VStack(alignment: .leading, spacing: 16) {
+                    StatusMenuPicker("표시할 항목", selection: Binding(
+                        get: { store.menuBarMetricID }, set: { store.setMenuBarMetric($0) }
+                    ), options: store.menuBarMetricOptions.map { ($0.id, $0.title) }, symbol: "chart.bar.xaxis",
+                                     menuOptions: store.menuBarMetricOptions.map {
+                        StatusMenuOption(title: $0.title, symbol: $0.symbol, section: $0.section)
+                    })
+                    HStack(alignment: .top, spacing: 18) {
+                        StatusMenuPicker("표시 방식", selection: Binding(
+                            get: { store.menuBarValueMode }, set: { store.setMenuBarValueMode($0) }
+                        ), options: store.menuBarSupportsPercentage
+                            ? [(.value, "값 그대로"), (.percentage, "사용률(%)")]
+                            : [(.value, "값 그대로")], fallbackTitle: "사용률(현재 확인 불가)", symbol: "number")
+                        .frame(maxWidth: .infinity)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("미리보기").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.muted)
+                            HStack(spacing: 8) {
+                                Image(systemName: "chart.bar.xaxis").foregroundStyle(Palette.mint)
+                                Text(store.menuBarPresentation.text)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().lineLimit(1)
+                            }
+                            .padding(.horizontal, 12).frame(height: 38)
+                            .background(Palette.background, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.line, lineWidth: 1).allowsHitTesting(false))
+                            .help(store.menuBarPresentation.description)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Text(store.menuBarPresentation.description)
+                        .font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.padding(20)
+            }
+        }.cardSurface()
     }
 
     private var updateSettings: some View {
@@ -179,7 +221,7 @@ struct SettingsView: View {
             ))
             .disabled(DemoData.isEnabled)
             Divider().overlay(Palette.line)
-            Text("새 버전을 내려받고 설치한 뒤 앱을 다시 시작합니다.")
+            Text("중간 버전을 거치지 않고 최신 호환 버전을 내려받아 설치한 뒤 앱을 다시 시작합니다.")
                 .font(.system(size: 11)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(20)
@@ -276,7 +318,7 @@ struct TemplateBuilderView: View {
 
     private var presetContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            builderPreset("API 자동 조회", subtitle: "서비스 API에 연결해 사용량·비용을 자동으로 갱신", icon: "network", tint: "blue") {
+            builderPreset("API 숫자 통계", subtitle: "사용량·비용 등 숫자를 가져와 단위·한도로 표시", icon: "network", tint: "blue") {
                 onEdit(.init(name: "새 API 통계", subtitle: "API에서 자동으로 가져온 값", symbol: "network", tint: "blue", kind: .http, unit: "", limit: nil, authPrefix: ""))
             }
             builderPreset("숫자 수동 입력", subtitle: "현재 값·예산·목표를 직접 입력하고 수정", icon: "square.and.pencil", tint: "purple") {
@@ -299,7 +341,7 @@ struct TemplateBuilderView: View {
                 Image(systemName: icon).font(.system(size: 21)).foregroundStyle(Palette.tint(tint)).frame(width: 30)
                 VStack(alignment: .leading, spacing: 6) { Text(title).font(.system(size: 13, weight: .medium)); Text(subtitle).font(.system(size: 11)).foregroundStyle(Palette.muted) }
                 Spacer(); Image(systemName: "plus").foregroundStyle(Palette.muted)
-            }.padding(17).cardSurface(radius: 11)
+            }.padding(17).cardSurface(radius: 11).contentShape(RoundedRectangle(cornerRadius: 11))
         }.buttonStyle(.plain)
     }
 

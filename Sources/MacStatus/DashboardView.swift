@@ -69,6 +69,7 @@ struct DashboardView: View {
         .frame(width: 600, height: 746)
         .background(Palette.background).foregroundStyle(Palette.text)
         .preferredColorScheme(.dark)
+        .acceptsWindowActivationClicks()
         .sheet(item: $selected, onDismiss: {
             if let kind = pendingConnection {
                 pendingConnection = nil
@@ -198,6 +199,7 @@ struct SystemCard: View {
                     Text(reading.subtitle).font(.system(size: 9)).foregroundStyle(Palette.muted).lineLimit(1)
                 }
             }.padding(11).frame(maxWidth: .infinity, alignment: .leading).frame(height: 82).cardSurface()
+                .contentShape(RoundedRectangle(cornerRadius: 14))
         }.buttonStyle(.plain)
     }
 }
@@ -211,9 +213,10 @@ struct CustomMetricRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label(template.name, systemImage: template.symbol)
                     .font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.tint(template.tint)).lineLimit(1)
-                if reading.value != nil {
+                if reading.value != nil || reading.text != nil || (template.kind == .http && template.effectiveHTTPValueMode == .json) {
                     Text(MetricFormat.value(reading, template: template) + (reading.text == nil && template.unit != "USD" ? " " + template.unit : ""))
                         .font(.system(size: 14, weight: .medium, design: .rounded)).monospacedDigit().lineLimit(1)
+                        .foregroundStyle(reading.state == .ready ? Palette.text : Palette.muted)
                 } else {
                     Text(reading.subtitle).font(.system(size: 9)).foregroundStyle(Palette.muted).lineLimit(1)
                 }
@@ -248,7 +251,13 @@ struct MetricDetailView: View {
             if isAI && !connected {
                 connectionContent
             } else {
-                if !isAI {
+                if template.kind == .http && template.effectiveHTTPValueMode == .json {
+                    Text(MetricFormat.value(reading, template: template))
+                        .font(.system(size: 18, weight: .medium, design: .monospaced))
+                        .foregroundStyle(reading.state == .ready ? Palette.text : Palette.muted)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
+                } else if !isAI {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(MetricFormat.value(reading, template: template)).font(.system(size: template.kind == .wakatime ? 34 : 44, weight: .medium, design: .rounded)).lineLimit(1).minimumScaleFactor(0.7)
                     if reading.value != nil && reading.text == nil { Text(template.unit).foregroundStyle(Palette.muted) }
@@ -297,6 +306,7 @@ struct MetricDetailView: View {
         }.padding(26)
         }.scrollIndicators(.never).frame(width: 410, height: isAI && connected ? 630 : 520)
             .background(Palette.background).foregroundStyle(Palette.text).preferredColorScheme(.dark)
+            .acceptsWindowActivationClicks()
     }
 
     private var connectionContent: some View {

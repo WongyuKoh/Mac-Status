@@ -46,11 +46,12 @@ enum TemplateEngine {
     /// Only known schema field names may be shown. Decoder paths and descriptions
     /// can contain arbitrary input, including a credential used as a header name.
     private static func decodingMessage(_ error: DecodingError) -> StatusError {
-        let fields: Set<String> = ["id", "name", "subtitle", "symbol", "tint", "kind", "unit", "limit", "manualValue", "endpoint", "valuePath", "limitPath", "aggregation", "multiplier", "headers", "authHeader", "authPrefix", "refreshInterval", "link", "isEnabled"]
+        let fields: Set<String> = ["id", "name", "subtitle", "symbol", "tint", "kind", "unit", "limit", "manualValue", "endpoint", "valuePath", "limitPath", "aggregation", "multiplier", "headers", "authHeader", "authPrefix", "refreshInterval", "link", "isEnabled", "valueMode", "valueExpression", "limitExpression"]
         let labels = [
             "name": "name(이름)", "kind": "kind(만들기 방식)",
             "limit": "limit(한도)", "manualValue": "manualValue(현재 값)",
-            "multiplier": "multiplier(배율)", "refreshInterval": "refreshInterval(갱신 간격)"
+            "multiplier": "multiplier(배율)", "refreshInterval": "refreshInterval(갱신 간격)",
+            "valueExpression": "valueExpression(값 계산식)", "limitExpression": "limitExpression(한도 계산식)"
         ]
         let context: DecodingError.Context
         switch error {
@@ -68,6 +69,8 @@ enum TemplateEngine {
         switch root {
         case "kind":
             return .message("kind(만들기 방식)을 확인해 주세요. 숫자 수동 입력은 \"manual\", API 자동 조회는 \"http\"입니다.")
+        case "valueMode":
+            return .message("valueMode(값 불러오기 방식)는 \"number\" 또는 \"json\"으로 입력해 주세요.")
         case "limit", "manualValue", "multiplier", "refreshInterval":
             return .message("\(labels[root] ?? root)에 숫자를 넣어 주세요. 숫자에는 큰따옴표를 쓰지 않아요.")
         case "headers":
@@ -92,69 +95,100 @@ enum TemplateEngine {
     }
 
     static func validate(_ template: MetricTemplate) throws {
-        guard !template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, template.name.count <= 60 else {
-            throw StatusError.message("name(이름)을 1~60자로 입력해 주세요.")
+        if let first = validationIssues(for: template).first {
+            throw StatusError.message(first.message)
         }
-        guard template.subtitle.count <= 180 else {
-            throw StatusError.message("subtitle(설명)을 180자 이하로 줄여 주세요.")
+    }
+
+    /// The editor can mark all affected inputs while import, export, and fetch
+    /// retain their existing first-error validation behavior and messages.
+    static func validationIssues(for template: MetricTemplate) -> [TemplateValidationIssue] {
+        var issues: [TemplateValidationIssue] = []
+        func append(_ field: TemplateField, _ message: String) {
+            guard !issues.contains(where: { $0.field == field }) else { return }
+            issues.append(.init(field: field, message: message))
         }
-        guard template.unit.count <= 20 else {
-            throw StatusError.message("unit(단위)을 20자 이하로 줄여 주세요.")
+
+        if template.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || template.name.count > 60 {
+            append(.name, "name(이름)을 1~60자로 입력해 주세요.")
         }
-        guard template.symbol.count <= 80 else {
-            throw StatusError.message("symbol(아이콘 이름)을 80자 이하로 줄여 주세요.")
+        if template.subtitle.count > 180 {
+            append(.subtitle, "subtitle(설명)을 180자 이하로 줄여 주세요.")
         }
-        guard template.refreshInterval.isFinite, (3...86_400).contains(template.refreshInterval) else {
-            throw StatusError.message("refreshInterval(갱신 간격)에 3~86400 사이의 숫자를 넣어 주세요. 단위는 초예요.")
+        if template.unit.count > 20 {
+            append(.unit, "unit(단위)을 20자 이하로 줄여 주세요.")
         }
-        guard template.multiplier.isFinite, template.multiplier != 0 else {
-            throw StatusError.message("multiplier(배율)에 0이 아닌 숫자를 넣어 주세요.")
+        if template.symbol.count > 80 {
+            append(.symbol, "symbol(아이콘 이름)을 80자 이하로 줄여 주세요.")
+        }
+        if !template.refreshInterval.isFinite || !(3...86_400).contains(template.refreshInterval) {
+            append(.refreshInterval, "refreshInterval(갱신 간격)에 3~86400 사이의 숫자를 넣어 주세요. 단위는 초예요.")
+        }
+        if !template.multiplier.isFinite || template.multiplier == 0 {
+            append(.multiplier, "multiplier(배율)에 0이 아닌 숫자를 넣어 주세요.")
         }
         if let limit = template.limit, !limit.isFinite || limit <= 0 {
-            throw StatusError.message("limit(한도)에 0보다 큰 숫자를 넣어 주세요. 한도가 없으면 null로 쓰세요.")
+            append(.limit, "limit(한도)에 0보다 큰 숫자를 넣어 주세요. 한도가 없으면 null로 쓰세요.")
         }
         if let value = template.manualValue, !value.isFinite || value < 0 {
-            throw StatusError.message("manualValue(현재 값)에 0 이상의 숫자를 넣어 주세요.")
+            append(.manualValue, "manualValue(현재 값)에 0 이상의 숫자를 넣어 주세요.")
         }
-        guard ["first", "sum"].contains(template.aggregation) else {
-            throw StatusError.message("aggregation에는 \"first\" 또는 \"sum\"을 넣어 주세요.")
+        if !["first", "sum"].contains(template.aggregation) {
+            append(.aggregation, "aggregation에는 \"first\" 또는 \"sum\"을 넣어 주세요.")
         }
-        guard (template.authHeader.isEmpty || validHeaderName(template.authHeader)),
-              !transportHeaderNames.contains(template.authHeader.lowercased()),
-              !template.authPrefix.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
-              template.authPrefix.count <= 100 else {
-            throw StatusError.message("authHeader와 authPrefix를 확인해 주세요. 줄바꿈은 넣을 수 없어요.")
+        let authenticationMessage = "authHeader와 authPrefix를 확인해 주세요. 줄바꿈은 넣을 수 없어요."
+        if (!template.authHeader.isEmpty && !validHeaderName(template.authHeader)) ||
+            transportHeaderNames.contains(template.authHeader.lowercased()) {
+            append(.authHeader, authenticationMessage)
         }
-        guard template.headers.count <= 20 else {
-            throw StatusError.message("headers의 항목을 20개 이하로 줄여 주세요.")
+        if template.authPrefix.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) || template.authPrefix.count > 100 {
+            append(.authPrefix, authenticationMessage)
+        }
+        if template.headers.count > 20 {
+            append(.headers, "headers의 항목을 20개 이하로 줄여 주세요.")
         }
         for (key, value) in template.headers {
-            guard validHeaderName(key), value.count <= 1_000,
-                  !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
-                throw StatusError.message("headers의 이름과 값을 확인해 주세요. 줄바꿈은 넣을 수 없어요.")
+            if !validHeaderName(key) || value.count > 1_000 || value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+                append(.headers, "headers의 이름과 값을 확인해 주세요. 줄바꿈은 넣을 수 없어요.")
             }
-            guard !secretNames.contains(key.lowercased()),
-                  key.lowercased() != template.authHeader.lowercased() else {
-                throw StatusError.message("headers에서 키와 토큰을 빼 주세요. 편집 화면의 보안 키 칸을 사용하세요.")
+            if secretNames.contains(key.lowercased()) || key.lowercased() == template.authHeader.lowercased() {
+                append(.headers, "headers에서 키와 토큰을 빼 주세요. 편집 화면의 보안 키 칸을 사용하세요.")
             }
-            guard !transportHeaderNames.contains(key.lowercased()) else {
-                throw StatusError.message("headers에서 전송 제어 항목을 빼 주세요. 앱이 자동으로 설정해요.")
+            if transportHeaderNames.contains(key.lowercased()) {
+                append(.headers, "headers에서 전송 제어 항목을 빼 주세요. 앱이 자동으로 설정해요.")
             }
         }
         if !template.link.isEmpty {
             do { _ = try checkedURL(template.link, allowVariables: false) }
-            catch { throw StatusError.message("link(바로가기): \(error.localizedDescription)") }
+            catch { append(.link, "link(바로가기): \(error.localizedDescription)") }
         }
         if template.kind == .http {
             do { _ = try checkedURL(template.endpoint, allowVariables: true) }
-            catch { throw StatusError.message("endpoint(조회 주소): \(error.localizedDescription)") }
-            do { _ = try pathComponents(template.valuePath) }
-            catch { throw StatusError.message("valuePath(숫자 위치): usage.total처럼 점(.)으로 구분해 주세요.") }
-            if !template.limitPath.isEmpty {
+            catch { append(.endpoint, "endpoint(조회 주소): \(error.localizedDescription)") }
+            do {
+                let components = try pathComponents(template.valuePath)
+                if template.effectiveHTTPValueMode == .json, components.contains("*") {
+                    throw StatusError.message("JSON 값은 A.B.C 또는 data.0.value처럼 한 위치를 지정해 주세요.")
+                }
+            } catch {
+                append(.valuePath, template.effectiveHTTPValueMode == .json
+                    ? "valuePath(값 위치): A.B.C 또는 data.0.value처럼 한 위치를 점(.)으로 구분해 주세요."
+                    : "valuePath(숫자 위치): usage.total처럼 점(.)으로 구분해 주세요.")
+            }
+            if template.effectiveHTTPValueMode == .number, !template.limitPath.isEmpty {
                 do { _ = try pathComponents(template.limitPath) }
-                catch { throw StatusError.message("limitPath(한도 위치): usage.limit처럼 점(.)으로 구분해 주세요.") }
+                catch { append(.limitPath, "limitPath(한도 위치): usage.limit처럼 점(.)으로 구분해 주세요.") }
+            }
+            if template.effectiveHTTPValueMode == .number {
+                do { try MetricCalculation.validate(template.valueExpression ?? "") }
+                catch { append(.valueExpression, "valueExpression(값 계산식): value와 숫자, 사칙연산으로 입력해 주세요.") }
+                if !template.limitPath.isEmpty {
+                    do { try MetricCalculation.validate(template.limitExpression ?? "") }
+                    catch { append(.limitExpression, "limitExpression(한도 계산식): value와 숫자, 사칙연산으로 입력해 주세요.") }
+                }
             }
         }
+        return issues
     }
 
     static func generationPrompt(request: String) -> String {
@@ -176,6 +210,8 @@ enum TemplateEngine {
           "endpoint": "https://example.com/api/usage",
           "valuePath": "usage.total",
           "limitPath": "",
+          "valueExpression": "",
+          "limitExpression": "",
           "aggregation": "first",
           "multiplier": 1,
           "headers": {},
@@ -190,12 +226,14 @@ enum TemplateEngine {
         - endpoint는 HTTPS만 사용하며, 로컬 도구는 localhost/127.0.0.1/::1의 HTTP도 허용합니다.
         - valuePath와 limitPath는 점으로 구분합니다. 배열 인덱스는 data.0.value, 전체 배열은 data.*.value. 여러 숫자의 합은 aggregation: sum. 단일 숫자는 first.
         - multiplier는 추출한 값에 곱합니다. 한도 limit은 표시 단위 기준이며 null이면 한도 없이 표시합니다.
+        - valueExpression과 limitExpression은 선택 계산식입니다. 각 경로에서 읽은 숫자를 value로 두고 +, -, *, /, 괄호만 사용합니다. 예: "value * 2". 단일 값 또는 합계 추출 → 계산식 → multiplier 순서로 계산합니다. limitExpression은 limitPath가 있을 때만 사용합니다. 빈 계산식은 원래 값을 유지하며 0으로 나누거나 계산 결과가 유한하지 않으면 null로 표시합니다.
         - URL의 {{month_start_unix}}, {{now_unix}}, {{month_start_iso}}는 실행 시 UTC 기준으로 대체됩니다.
         - headers에는 anthropic-version 같은 비밀이 아닌 헤더만 넣으세요. 키, 토큰, Cookie는 JSON/URL 어디에도 포함하지 마세요. 사용자가 앱의 보안 키 필드에 입력하며 macOS 키체인에 저장됩니다.
         - 인증 헤더는 authHeader, 접두어는 authPrefix. x-api-key 방식이면 authHeader: x-api-key, authPrefix: 빈 문자열.
         - tint는 mint, blue, purple, orange 중 하나. symbol은 SF Symbols 이름. refreshInterval은 초 단위 3~86400.
         - 페이지가 나뉘는 API에서는 요청 기간/limit을 조정해 전체 결과가 한 응답에 들어오게 하세요. 합계 응답에 has_more: true 또는 next_page가 있으면 앱은 불완전한 합계를 표시하지 않습니다.
         - sum에서 경로가 존재하는 빈 배열의 합계는 0입니다. 누락된 경로나 null을 0으로 바꾸지는 않습니다.
+        - API 주소와 JSON 경로의 값을 그대로 표시하려면 valueMode: "json"을 사용할 수 있습니다. 숫자·문자열·참/거짓·객체·배열을 읽으며, 한도·합계·배율은 적용하지 않습니다. 경로는 A.B.C 또는 data.0.value처럼 한 위치를 지정합니다. 값이 없거나 조회에 실패하면 null로 표시합니다. 인증이 필요 없으면 authHeader와 authPrefix를 빈 문자열로 둡니다.
         - JSON 이외의 코드, 셸 명령, JavaScript는 지원하지 않습니다.
         """
     }
@@ -209,6 +247,19 @@ enum TemplateEngine {
         guard template.kind == .http else {
             throw StatusError.message("이 항목은 전용 데이터 소스로 조회해야 합니다.")
         }
+        do { return try await fetchHTTP(template, token: token) }
+        catch is CancellationError { throw CancellationError() }
+        catch let error as StatusError {
+            guard template.effectiveHTTPValueMode == .json else { throw error }
+            return nullJSONReading(error.localizedDescription, state: .failed)
+        }
+        catch {
+            guard template.effectiveHTTPValueMode == .json else { throw error }
+            return nullJSONReading("값을 불러오지 못했습니다. API 주소와 연결 상태를 확인하세요.", state: .failed)
+        }
+    }
+
+    private static func fetchHTTP(_ template: MetricTemplate, token: String?) async throws -> MetricReading {
         let url = try checkedURL(expandVariables(template.endpoint), allowVariables: false)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -271,6 +322,9 @@ enum TemplateEngine {
 
     /// Kept separate from transport to verify adapters using safe, repeatable fixtures.
     static func reading(from data: Data, template: MetricTemplate) throws -> MetricReading {
+        if template.effectiveHTTPValueMode == .json {
+            return jsonReading(from: data, template: template)
+        }
         let json: Any
         do { json = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) }
         catch { throw StatusError.message("API 응답이 JSON 형식이 아닙니다.") }
@@ -289,16 +343,93 @@ enum TemplateEngine {
             }
         }
         let rawValue = try extractNumber(from: json, path: template.valuePath, aggregation: template.aggregation)
-        let value = rawValue * template.multiplier
-        guard value.isFinite else { throw StatusError.message("계산 결과가 유한한 숫자가 아닙니다.") }
-        let limit: Double?
-        if template.limitPath.isEmpty { limit = template.limit }
-        else {
-            let extracted = try extractNumber(from: json, path: template.limitPath, aggregation: "first") * template.multiplier
-            guard extracted.isFinite, extracted > 0 else { throw StatusError.message("API 한도 값이 올바르지 않습니다.") }
-            limit = extracted
+        do {
+            let value = try calculatedNumber(rawValue, expression: template.valueExpression, template: template)
+            let limit: Double?
+            if template.limitPath.isEmpty { limit = template.limit }
+            else {
+                let rawLimit = try extractNumber(from: json, path: template.limitPath, aggregation: "first")
+                let extracted = try calculatedNumber(rawLimit, expression: template.limitExpression, template: template)
+                guard extracted > 0 else {
+                    if !(template.limitExpression ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return nullCalculationReading("한도 계산 결과는 0보다 커야 합니다.")
+                    }
+                    throw StatusError.message("API 한도 값이 올바르지 않습니다.")
+                }
+                limit = extracted
+            }
+            return MetricReading(value: value, limit: limit, subtitle: template.subtitle.isEmpty ? "HTTP JSON · 실제 조회 값" : template.subtitle)
+        } catch let failure as MetricCalculation.Failure {
+            switch failure {
+            case .divisionByZero: return nullCalculationReading("0으로 나눌 수 없어 계산 결과가 null입니다.")
+            case .nonFinite: return nullCalculationReading("계산 결과를 유한한 숫자로 표시할 수 없습니다.")
+            case .invalidExpression, .tooComplex: return nullCalculationReading("계산식을 확인해 주세요.")
+            }
         }
-        return MetricReading(value: value, limit: limit, subtitle: template.subtitle.isEmpty ? "HTTP JSON · 실제 조회 값" : template.subtitle)
+    }
+
+    private static func calculatedNumber(_ value: Double, expression: String?, template: MetricTemplate) throws -> Double {
+        let calculated = try MetricCalculation.evaluate(expression ?? "", value: value)
+        let scaled = calculated * template.multiplier
+        guard scaled.isFinite else {
+            if template.hasNumericExpressions { throw MetricCalculation.Failure.nonFinite }
+            throw StatusError.message("계산 결과가 유한한 숫자가 아닙니다.")
+        }
+        return scaled == 0 ? 0 : scaled
+    }
+
+    private static func nullCalculationReading(_ message: String) -> MetricReading {
+        .init(text: "null", subtitle: message, state: .unavailable, updatedAt: nil)
+    }
+
+    private static func jsonReading(from data: Data, template: MetricTemplate) -> MetricReading {
+        guard data.count <= maximumResponseBytes else {
+            return nullJSONReading("API 응답이 1 MB를 초과합니다. 조회 범위를 줄여 주세요.", state: .failed)
+        }
+        let json: Any
+        do { json = try JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) }
+        catch { return nullJSONReading("API 응답이 JSON 형식이 아닙니다.", state: .failed) }
+        let value: Any?
+        do { value = try extractJSONValue(from: json, path: template.valuePath) }
+        catch { return nullJSONReading("JSON 경로를 확인하세요. A.B.C처럼 한 위치를 지정해 주세요.") }
+        guard let value else { return nullJSONReading("지정한 JSON 경로에 값이 없습니다.") }
+        guard !(value is NSNull) else { return nullJSONReading("API가 null을 반환했습니다.") }
+        let text: String
+        if let string = value as? String, !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text = string
+        } else {
+            do {
+                let encoded = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes])
+                guard let decoded = String(data: encoded, encoding: .utf8) else {
+                    return nullJSONReading("JSON 값을 표시할 수 없습니다.")
+                }
+                text = decoded
+            } catch { return nullJSONReading("JSON 값을 표시할 수 없습니다.") }
+        }
+        guard text.count <= 4_096 else {
+            return nullJSONReading("선택한 값이 너무 큽니다. 더 안쪽의 JSON 경로를 지정해 주세요.")
+        }
+        return MetricReading(text: text, subtitle: template.subtitle.isEmpty ? "JSON 경로에서 가져온 값" : template.subtitle)
+    }
+
+    private static func nullJSONReading(_ message: String, state: MetricState = .unavailable) -> MetricReading {
+        MetricReading(text: "null", subtitle: message, state: state, updatedAt: nil)
+    }
+
+    /// Reads a single exact location. Missing containers and out-of-range indexes
+    /// remain absent; an explicit JSON null remains NSNull until presentation.
+    static func extractJSONValue(from json: Any, path: String) throws -> Any? {
+        let components = try pathComponents(path)
+        guard !components.contains("*") else {
+            throw StatusError.message("JSON 값은 A.B.C 또는 data.0.value처럼 한 위치를 지정해 주세요.")
+        }
+        var current = json
+        for component in components {
+            if let object = current as? [String: Any], let next = object[component] { current = next }
+            else if let array = current as? [Any], let index = Int(component), array.indices.contains(index) { current = array[index] }
+            else { return nil }
+        }
+        return current
     }
 
     static func extractNumber(from json: Any, path: String, aggregation: String) throws -> Double {
@@ -428,6 +559,9 @@ private struct TemplateDocument: Decodable {
     var refreshInterval: Double?
     var link: String?
     var isEnabled: Bool?
+    var valueMode: HTTPValueMode?
+    var valueExpression: String?
+    var limitExpression: String?
 
     var template: MetricTemplate {
         MetricTemplate(
@@ -435,8 +569,10 @@ private struct TemplateDocument: Decodable {
             tint: tint ?? "mint", kind: kind, unit: unit ?? "%", limit: limit, manualValue: manualValue,
             endpoint: endpoint ?? "", valuePath: valuePath ?? "", limitPath: limitPath ?? "",
             aggregation: aggregation ?? "first", multiplier: multiplier ?? 1, headers: headers ?? [:],
-            authHeader: authHeader ?? "Authorization", authPrefix: authPrefix ?? "Bearer ",
-            refreshInterval: refreshInterval ?? 60, link: link ?? "", isEnabled: isEnabled ?? true
+            authHeader: authHeader ?? (valueMode == .json ? "" : "Authorization"),
+            authPrefix: authPrefix ?? (valueMode == .json ? "" : "Bearer "),
+            refreshInterval: refreshInterval ?? 60, link: link ?? "", isEnabled: isEnabled ?? true,
+            valueMode: valueMode, valueExpression: valueExpression, limitExpression: limitExpression
         )
     }
 }

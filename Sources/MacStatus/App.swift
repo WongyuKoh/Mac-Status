@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
     private var settingsWindow: NSWindow?
     private var previewWindow: NSWindow?
     private var monitor: Any?
+    private var localMouseMonitor: Any?
     private var windowCloseObserver: NSObjectProtocol?
     private var pendingWindowPresentation: (@MainActor @Sendable () -> Void)?
     private var subscription: AnyCancellable?
@@ -62,12 +63,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         subscription = store.objectWillChange.debounce(for: .milliseconds(150), scheduler: RunLoop.main).sink { [weak self] _ in
             MainActor.assumeIsolated { self?.updateMenuTitle() }
         }
+        updateMenuTitle()
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             // AppKit delivers monitor callbacks on the main thread. Handle the
             // click now so a queued dismissal cannot close a newly opened panel.
             MainActor.assumeIsolated {
                 guard let self, self.popover.isShown else { return }
-                self.popover.performClose(nil)
+                self.dismissPopoverForOutsideClick()
+            }
+        }
+        // Global monitors exclude this app. A click on the settings window
+        // must also close the dashboard, then continue to the clicked control.
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, self.popover.isShown else { return event }
+                return PopoverOutsideClick.handle(event, clickedWindow: event.window,
+                                                  popoverWindow: self.popover.contentViewController?.view.window,
+                                                  statusItemWindow: self.statusItem.button?.window,
+                                                  dismiss: { self.dismissPopoverForOutsideClick() },
+                                                  focus: { WindowFocus.focusForClick($0) })
             }
         }
         windowCloseObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { notification in
@@ -96,7 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         guard let button = statusItem.button else { return }
         if popover.isShown { popover.performClose(nil) }
         else {
-            NSApp.activate(ignoringOtherApps: true)
+            // Activating the application also raises its main settings window.
+            // Opening the dashboard should order and focus only the popover.
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             Task { await store.refresh() }
@@ -104,10 +119,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
     }
 
     private func updateMenuTitle() {
-        if store.showCPUInMenu, let cpu = store.cpuReading {
-            statusItem.button?.title = " \(Int(cpu.rounded()))%"
-            statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        } else { statusItem.button?.title = "" }
+        guard let button = statusItem.button else { return }
+        let presentation = store.menuBarPresentation
+        button.title = store.showCPUInMenu ? " " + presentation.text : ""
+        button.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        button.toolTip = store.showCPUInMenu ? presentation.description : "Mac Status · 사용량과 시스템 통계"
+        button.setAccessibilityLabel(store.showCPUInMenu ? presentation.description : "Mac Status")
     }
 
     private func showSettings(builder: Bool) {
@@ -148,6 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
         if !popover.isShown { finishWindowPresentation() }
     }
 
+    private func dismissPopoverForOutsideClick() {
+        // A newer click on another window takes precedence over an unfinished
+        // dashboard-to-settings/login transition.
+        pendingWindowPresentation = nil
+        popover.performClose(nil)
+    }
+
     func popoverDidClose(_ notification: Notification) {
         finishWindowPresentation()
     }
@@ -170,19 +194,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        // Sparkle presents its own standard windows. Do not replace their focus
-        // with the settings window or reopen the dashboard over them.
-        if let window = NSApp.keyWindow, window.isVisible, window.styleMask.contains(.titled), !(window is KeyboardWindow) {
-            return
-        }
-        // activate() is asynchronous. Reassert the editable key window after
-        // WindowServer has actually foregrounded this application.
-        if let window = NSApp.orderedWindows.first(where: { $0 is KeyboardWindow && $0.isVisible }) {
-            window.makeKeyAndOrderFront(nil)
-            window.makeMain()
-        } else if statusItem != nil, !popover.isShown {
-            togglePopover()
-        }
+        // Settings/login windows are presented by their explicit actions and
+        // physical clicks. A status-item activation must never raise them.
+        let target = PopoverFocus.activationTarget(
+            popoverWindow: popover.contentViewController?.view.window,
+            isPopoverShown: popover.isShown, keyWindow: NSApp.keyWindow, modalWindow: NSApp.modalWindow
+        )
+        target?.makeKey()
     }
 
     @objc private func openSettingsFromMenu() { showSettings(builder: false) }
@@ -229,6 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSM
 
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
         if let windowCloseObserver { NotificationCenter.default.removeObserver(windowCloseObserver) }
     }
 }

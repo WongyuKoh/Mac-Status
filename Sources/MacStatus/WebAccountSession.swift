@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 import WebKit
+import AppKit
+import SwiftUI
 
 struct WebOrganization: Identifiable, Equatable {
     let id: String
@@ -10,13 +12,14 @@ struct WebOrganization: Identifiable, Equatable {
 /// The app owns these website sessions. It never reads another browser's cookies,
 /// CLI login files, passwords, or OAuth credentials from an installed tool.
 @MainActor
-final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
+final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     let kind: MetricKind
     let webView: WKWebView
     @Published private(set) var isLoading = false
     @Published private(set) var statusMessage: String?
     @Published private(set) var currentHost = ""
     @Published private(set) var isAuthenticated = false
+    @Published private(set) var isAuthenticatingPopup = false
     @Published private(set) var organizations: [WebOrganization] = []
     @Published var selectedOrganizationID: String? {
         didSet {
@@ -31,6 +34,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     private var prepareAfterClear = false
     private var applyingOrganization = false
     private var generation = 0
+    private var mainNavigationSequence = 0
     private var retryAfter: Date?
     private var readTask: Task<MetricReading, Never>?
     private var activeReadID: UUID?
@@ -38,14 +42,35 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     private var clearTask: Task<Void, Never>?
     private var urlObservation: NSKeyValueObservation?
     private var loadingObservation: NSKeyValueObservation?
+    private var authenticationPopups: [ObjectIdentifier: AuthenticationPopup] = [:]
+    private var popupRestoreTask: Task<Void, Never>?
+    private var popupFailureStatus: String?
+    private var suppressPopupReload = false
     private let defaults: UserDefaults
+    private let presentAuthenticationWindow: @MainActor (NSWindow, WKWebView) -> Void
 
-    init(kind: MetricKind, defaults: UserDefaults = .standard) {
+    private struct AuthenticationPopup {
+        let webView: WKWebView
+        let window: NSWindow
+    }
+
+    var pendingAuthenticationStatus: String? {
+        if isAuthenticatingPopup {
+            return popupFailureStatus ?? "별도 인증 창에서 로그인을 완료해 주세요. 인증 창을 닫으면 연결을 다시 확인합니다."
+        }
+        return WebAccountPolicy.authenticationStatus(at: webView.url, for: kind)
+    }
+
+    init(kind: MetricKind, defaults: UserDefaults = .standard, websiteDataStore: WKWebsiteDataStore? = nil,
+         presentAuthenticationWindow: @escaping @MainActor (NSWindow, WKWebView) -> Void = { window, view in
+             WindowFocus.present(window, firstResponder: view)
+         }) {
         precondition(kind == .codex || kind == .claude)
         self.kind = kind
         self.defaults = defaults
+        self.presentAuthenticationWindow = presentAuthenticationWindow
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = WKWebsiteDataStore(forIdentifier: WebAccountPolicy.storeIdentifier(for: kind))
+        configuration.websiteDataStore = websiteDataStore ?? WKWebsiteDataStore(forIdentifier: WebAccountPolicy.storeIdentifier(for: kind))
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         webView = LoginWebView(frame: .zero, configuration: configuration)
         selectedOrganizationID = kind == .claude ? defaults.string(forKey: WebAccountPolicy.organizationKey) : nil
@@ -68,6 +93,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     /// It never fills fields or submits login forms; the user signs in normally.
     func prepare() {
         if isClearing { prepareAfterClear = true; return }
+        guard !isAuthenticatingPopup else { return }
         guard !prepared else { return }
         prepared = true
         isLoading = true
@@ -76,6 +102,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     }
 
     func reload() {
+        closeAuthenticationPopups()
         invalidateRead()
         statusMessage = nil
         if isClearing { prepareAfterClear = true; return }
@@ -85,6 +112,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     }
 
     func showUsagePage() {
+        closeAuthenticationPopups()
         invalidateRead()
         statusMessage = nil
         if isClearing { prepareAfterClear = true; return }
@@ -98,6 +126,11 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     func read() async -> MetricReading {
         if let clearTask { await clearTask.value }
         guard !Task.isCancelled else { return .setup("사용량 조회를 취소했습니다.") }
+        if isAuthenticatingPopup, let pending = pendingAuthenticationStatus {
+            isAuthenticated = false
+            statusMessage = pending
+            return .setup(pending)
+        }
         if let readTask { return await readTask.value }
         let requestGeneration = generation
         let selection = selectedOrganizationID
@@ -109,7 +142,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
         if activeReadID == requestID {
             readTask = nil
             activeReadID = nil
-            if let pending = WebAccountPolicy.authenticationStatus(at: webView.url, for: kind) {
+            if let pending = pendingAuthenticationStatus {
                 isAuthenticated = false
                 result = .setup(pending)
             }
@@ -122,6 +155,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
         if let clearTask { await clearTask.value; return }
         isClearing = true
         prepareAfterClear = false
+        closeAuthenticationPopups()
         invalidateRead()
         webView.stopLoading()
         webView.loadHTMLString("", baseURL: nil)
@@ -168,11 +202,12 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     }
 
     private func performRead(generation requestGeneration: Int, organization: String?) async -> MetricReading {
+        guard !isAuthenticatingPopup else { return .setup(pendingAuthenticationStatus ?? "별도 인증 창에서 로그인을 완료해 주세요.") }
         if let retryAfter, retryAfter > Date() {
             return .error("서비스에서 조회를 제한했습니다. 약 \(max(1, Int(ceil(retryAfter.timeIntervalSinceNow / 60))))분 뒤 다시 확인합니다.")
         }
         prepare()
-        if let pending = WebAccountPolicy.authenticationStatus(at: webView.url, for: kind) {
+        if let pending = pendingAuthenticationStatus {
             isAuthenticated = false
             return .setup(pending)
         }
@@ -183,7 +218,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         guard generation == requestGeneration, !Task.isCancelled else { return .setup("사용량 조회 조건이 변경되었습니다. 다시 확인해 주세요.") }
-        if let pending = WebAccountPolicy.authenticationStatus(at: webView.url, for: kind) {
+        if let pending = pendingAuthenticationStatus {
             isAuthenticated = false
             return .setup(pending)
         }
@@ -206,7 +241,7 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
                 ) { result in completion(result.map { $0 as Any? }) }
             }
             guard generation == requestGeneration, !Task.isCancelled else { return .setup("사용량 조회 조건이 변경되었습니다. 다시 확인해 주세요.") }
-            if let pending = WebAccountPolicy.authenticationStatus(at: webView.url, for: kind) {
+            if let pending = pendingAuthenticationStatus {
                 isAuthenticated = false
                 return .setup(pending)
             }
@@ -262,6 +297,11 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === self.webView else {
+            if ownsAuthenticationPopup(webView) { popupFailureStatus = nil }
+            return
+        }
+        mainNavigationSequence += 1
         evaluation?.cancel(error: WebAccountDeadlineError.navigationChanged)
         isLoading = webView.isLoading
         currentHost = webView.url?.host ?? ""
@@ -269,40 +309,57 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         isLoading = webView.isLoading
         currentHost = webView.url?.host ?? ""
         updateAuthenticationStage()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
         isLoading = webView.isLoading
         currentHost = webView.url?.host ?? ""
         updateAuthenticationStage()
     }
 
     private func updateAuthenticationStage() {
-        guard let pending = WebAccountPolicy.authenticationStatus(at: webView.url, for: kind) else { return }
+        guard let pending = pendingAuthenticationStatus else { return }
         isAuthenticated = false
         statusMessage = pending
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        navigationFailed(error)
+        navigationFailed(error, in: webView)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        navigationFailed(error)
+        navigationFailed(error, in: webView)
     }
 
-    private func navigationFailed(_ error: Error) {
-        isLoading = webView.isLoading
+    private func navigationFailed(_ error: Error, in view: WKWebView) {
         guard (error as NSError).code != NSURLErrorCancelled else { return }
+        guard view === webView else {
+            if ownsAuthenticationPopup(view) {
+                popupFailureStatus = "인증 페이지를 불러오지 못했습니다. 인증 창을 닫은 뒤 다시 시도해 주세요."
+                updateAuthenticationStage()
+            }
+            return
+        }
+        isLoading = webView.isLoading
         guard !webView.isLoading else { return }
         prepared = false
         statusMessage = "로그인 페이지를 불러오지 못했습니다. 네트워크를 확인한 뒤 새로고침해 주세요."
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard webView === self.webView else {
+            if ownsAuthenticationPopup(webView) {
+                popupFailureStatus = "인증 페이지가 중단되었습니다. 인증 창을 닫은 뒤 다시 시도해 주세요."
+                updateAuthenticationStage()
+            }
+            return
+        }
+        closeAuthenticationPopups()
         invalidateRead()
         prepared = false
         isLoading = false
@@ -318,10 +375,95 @@ final class WebAccountSession: NSObject, ObservableObject, WKNavigationDelegate,
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if navigationAction.targetFrame == nil, navigationAction.request.url?.scheme?.lowercased() == "https" {
-            webView.load(navigationAction.request)
+        guard navigationAction.targetFrame == nil else { return nil }
+        return makeAuthenticationPopup(configuration: configuration, opener: webView, requestURL: navigationAction.request.url)
+    }
+
+    /// Use WebKit's related configuration unchanged. It preserves the app-owned
+    /// website store and window.opener relationship; the parent stays in place.
+    func makeAuthenticationPopup(configuration: WKWebViewConfiguration, opener: WKWebView, requestURL: URL?) -> WKWebView? {
+        guard !isClearing, clearTask == nil, WebAccountPolicy.canOpenAuthenticationPopup(at: requestURL),
+              opener === webView || ownsAuthenticationPopup(opener) else { return nil }
+        guard authenticationPopups.count < 3 else {
+            popupFailureStatus = "인증 창이 여러 개 열려 있습니다. 열린 인증 창에서 로그인을 진행해 주세요."
+            updateAuthenticationStage()
+            return nil
         }
-        return nil
+        popupRestoreTask?.cancel()
+        popupRestoreTask = nil
+        let child = LoginWebView(frame: .zero, configuration: configuration)
+        child.navigationDelegate = self
+        child.uiDelegate = self
+        child.autoresizingMask = [.width, .height]
+        let window = KeyboardWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 720),
+                                    styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "\(kind == .codex ? "ChatGPT" : "Claude") · 로그인 인증"
+        window.contentViewController = NSHostingController(rootView: AuthenticationPopupContentView(webView: child, kind: kind))
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.center()
+        authenticationPopups[ObjectIdentifier(window)] = .init(webView: child, window: window)
+        invalidateRead()
+        popupFailureStatus = nil
+        isAuthenticatingPopup = true
+        isAuthenticated = false
+        updateAuthenticationStage()
+        presentAuthenticationWindow(window, child)
+        return child
+    }
+
+    private func ownsAuthenticationPopup(_ view: WKWebView) -> Bool {
+        authenticationPopups.values.contains { $0.webView === view }
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        authenticationPopups.values.first { $0.webView === webView }?.window.close()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              let popup = authenticationPopups.removeValue(forKey: ObjectIdentifier(window)) else { return }
+        popup.webView.stopLoading()
+        popup.webView.navigationDelegate = nil
+        popup.webView.uiDelegate = nil
+        window.delegate = nil
+        isAuthenticatingPopup = !authenticationPopups.isEmpty
+        guard !isAuthenticatingPopup, !suppressPopupReload, !isClearing, clearTask == nil else { return }
+        popupFailureStatus = nil
+        let expectedGeneration = generation
+        let parentURL = webView.url
+        let parentNavigationSequence = mainNavigationSequence
+        popupRestoreTask?.cancel()
+        popupRestoreTask = Task { @MainActor [weak self] in
+            // Allow the opener's OAuth callback/postMessage to finish first.
+            do { try await Task.sleep(nanoseconds: 300_000_000) }
+            catch { return }
+            guard let self, !Task.isCancelled, self.generation == expectedGeneration,
+                  !self.isAuthenticatingPopup, !self.isClearing, self.clearTask == nil else { return }
+            self.popupRestoreTask = nil
+            guard WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: parentURL, currentURL: self.webView.url,
+                      isLoading: self.webView.isLoading, navigationUnchanged: self.mainNavigationSequence == parentNavigationSequence,
+                      kind: self.kind) else { return }
+            self.reload()
+        }
+    }
+
+    /// Cancel/completion/clear must not trigger a delayed hidden page reload.
+    func closeAuthenticationPopups() {
+        popupRestoreTask?.cancel()
+        popupRestoreTask = nil
+        suppressPopupReload = true
+        for popup in Array(authenticationPopups.values) {
+            popup.webView.stopLoading()
+            popup.webView.navigationDelegate = nil
+            popup.webView.uiDelegate = nil
+            popup.window.close()
+            popup.window.delegate = nil
+        }
+        authenticationPopups.removeAll()
+        isAuthenticatingPopup = false
+        popupFailureStatus = nil
+        suppressPopupReload = false
     }
 
     /// All scripts are fixed application code. They inspect no input fields or
@@ -527,12 +669,33 @@ enum WebAccountPolicy {
         return url.host?.lowercased() == (kind == .codex ? "chatgpt.com" : "claude.ai")
     }
 
+    static func canOpenAuthenticationPopup(at url: URL?) -> Bool {
+        guard let url else { return false }
+        if url.absoluteString == "about:blank" { return true }
+        return url.scheme?.lowercased() == "https" && url.host != nil && url.user == nil && url.password == nil
+            && (url.port == nil || url.port == 443)
+    }
+
+    static func embeddedAuthenticationNotice(at url: URL?) -> String? {
+        guard let url, url.scheme?.lowercased() == "https", url.host?.lowercased() == "accounts.google.com",
+              url.user == nil, url.password == nil, url.port == nil || url.port == 443 else { return nil }
+        return "Google 로그인·패스키는 이 앱 안에서 제한될 수 있습니다."
+    }
+
+    static func shouldRestoreUsageAfterAuthentication(initialURL: URL?, currentURL: URL?, isLoading: Bool,
+                                                     navigationUnchanged: Bool, kind: MetricKind) -> Bool {
+        guard !isLoading, navigationUnchanged, let currentURL, initialURL == currentURL,
+              canReadUsage(at: currentURL, for: kind), !isAuthenticationPage(at: currentURL, for: kind) else { return false }
+        return true
+    }
+
     /// Authentication stage detection is deliberately independent of the query
     /// string. A login page's returnTo=/settings/usage does not mean signed in;
     /// a usage page's returnTo=/login does not mean signed out. Exact-origin
     /// validation is a separate guard before any usage script can run.
     static func isAuthenticationPage(at url: URL?, for kind: MetricKind) -> Bool {
         guard let url, kind == .codex || kind == .claude else { return false }
+        if embeddedAuthenticationNotice(at: url) != nil { return true }
         let common: Set<String> = [
             "login", "logout", "auth", "oauth", "oauth2", "signup", "signin", "sign-in", "sign-up", "log-in", "log-out",
             "verify", "verification", "callback", "magic-link", "magic_link", "verify-email", "email-verification", "email-code"
@@ -546,6 +709,9 @@ enum WebAccountPolicy {
 
     static func authenticationStatus(at url: URL?, for kind: MetricKind) -> String? {
         guard isAuthenticationPage(at: url, for: kind) else { return nil }
+        if embeddedAuthenticationNotice(at: url) != nil {
+            return "패스키 인증 창이 뜨지 않으면 ‘다른 방법 시도’에서 다른 인증 수단을 선택하세요."
+        }
         return "로그인 또는 이메일 인증을 완료하면 사용량을 자동으로 확인합니다. 인증을 진행하는 동안에는 사용량을 조회하지 않습니다."
     }
 

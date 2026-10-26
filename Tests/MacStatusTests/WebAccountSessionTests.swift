@@ -1,5 +1,7 @@
 import XCTest
 import JavaScriptCore
+import AppKit
+import WebKit
 @testable import MacStatus
 
 final class WebAccountSessionTests: XCTestCase {
@@ -47,6 +49,125 @@ final class WebAccountSessionTests: XCTestCase {
         }
         XCTAssertFalse(WebAccountPolicy.isAuthenticationPage(at: nil, for: .claude))
         XCTAssertFalse(WebAccountPolicy.isAuthenticationPage(at: URL(string: "https://claude.ai/login"), for: .cpu))
+    }
+
+    func testGooglePasskeyGuidanceRequiresTheExactTrustedHTTPSOrigin() {
+        for address in ["https://accounts.google.com", "https://accounts.google.com/v3/signin/challenge/pk", "https://accounts.google.com:443/any-auth-step"] {
+            let url = URL(string: address)
+            XCTAssertNotNil(WebAccountPolicy.embeddedAuthenticationNotice(at: url), address)
+            XCTAssertTrue(WebAccountPolicy.isAuthenticationPage(at: url, for: .codex), address)
+            XCTAssertTrue(WebAccountPolicy.authenticationStatus(at: url, for: .claude)?.contains("다른 방법 시도") == true, address)
+        }
+        for address in ["http://accounts.google.com/signin", "https://accounts.google.com.evil.example/signin", "https://evil.example/accounts.google.com", "https://accounts.google.com:8443/signin", "https://user@accounts.google.com/signin", "https://claude.ai/settings/usage?next=https://accounts.google.com"] {
+            let url = URL(string: address)
+            XCTAssertNil(WebAccountPolicy.embeddedAuthenticationNotice(at: url), address)
+            XCTAssertFalse(WebAccountPolicy.authenticationStatus(at: url, for: .codex)?.contains("패스키") == true, address)
+        }
+        XCTAssertNil(WebAccountPolicy.embeddedAuthenticationNotice(at: nil))
+    }
+
+    func testAuthenticationPopupPolicyAllowsOnlyHTTPSAndAnExactBlankContext() {
+        for address in ["https://accounts.google.com/o/oauth2/auth", "https://auth.openai.com/authorize", "https://sso.example.test/sign-in", "about:blank"] {
+            XCTAssertTrue(WebAccountPolicy.canOpenAuthenticationPopup(at: URL(string: address)), address)
+        }
+        for address in ["http://accounts.google.com", "https://user@accounts.google.com", "https://accounts.google.com:8443", "javascript:alert(1)", "file:///tmp/login.html", "data:text/html,test", "about:blank#other", "custom-auth://callback"] {
+            XCTAssertFalse(WebAccountPolicy.canOpenAuthenticationPopup(at: URL(string: address)), address)
+        }
+        XCTAssertFalse(WebAccountPolicy.canOpenAuthenticationPopup(at: nil))
+    }
+
+    func testPopupFallbackNeverReplaysCallbacksOrInterruptsAnOpenerNavigation() {
+        let usage = URL(string: "https://chatgpt.com/codex/settings/usage")!
+        let home = URL(string: "https://chatgpt.com/")!
+        let callback = URL(string: "https://chatgpt.com/auth/callback?code=fixture-once")!
+        XCTAssertTrue(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: usage, currentURL: usage, isLoading: false, navigationUnchanged: true, kind: .codex))
+        XCTAssertFalse(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: usage, currentURL: home, isLoading: false, navigationUnchanged: true, kind: .codex))
+        XCTAssertFalse(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: usage, currentURL: usage, isLoading: false, navigationUnchanged: false, kind: .codex))
+        XCTAssertFalse(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: usage, currentURL: usage, isLoading: true, navigationUnchanged: true, kind: .codex))
+        XCTAssertFalse(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: callback, currentURL: callback, isLoading: false, navigationUnchanged: true, kind: .codex))
+        XCTAssertFalse(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: nil, currentURL: nil, isLoading: false, navigationUnchanged: true, kind: .codex))
+        let google = URL(string: "https://accounts.google.com/v3/signin/identifier")!
+        XCTAssertFalse(WebAccountPolicy.shouldRestoreUsageAfterAuthentication(initialURL: google, currentURL: google, isLoading: false, navigationUnchanged: true, kind: .codex))
+    }
+
+    @MainActor
+    func testRelatedPopupKeepsSuppliedConfigurationAndPausesReadsWithoutReplacingParent() async throws {
+        _ = NSApplication.shared
+        let store = WKWebsiteDataStore.nonPersistent()
+        var windows: [NSWindow] = []
+        let session = WebAccountSession(kind: .codex, websiteDataStore: store, presentAuthenticationWindow: { window, _ in windows.append(window) })
+        defer { session.closeAuthenticationPopups() }
+        let parentURL = session.webView.url
+        let suppliedConfiguration = session.webView.configuration
+        suppliedConfiguration.applicationNameForUserAgent = "MacStatusPopupFixture"
+        let child = try XCTUnwrap(session.makeAuthenticationPopup(configuration: suppliedConfiguration, opener: session.webView,
+                                                                 requestURL: URL(string: "https://accounts.google.com/o/oauth2/auth")))
+        XCTAssertEqual(windows.count, 1)
+        XCTAssertTrue(child.configuration.websiteDataStore === store)
+        XCTAssertTrue(child.configuration.userContentController === suppliedConfiguration.userContentController)
+        XCTAssertEqual(child.configuration.applicationNameForUserAgent, "MacStatusPopupFixture")
+        XCTAssertFalse(child.configuration.preferences.javaScriptCanOpenWindowsAutomatically)
+        XCTAssertTrue(session.isAuthenticatingPopup)
+        XCTAssertEqual(session.webView.url, parentURL)
+        session.webView(child, didCommit: nil)
+        session.webView(child, didFinish: nil)
+        XCTAssertEqual(session.currentHost, "")
+        XCTAssertFalse(session.isLoading)
+        let reading = await session.read()
+        XCTAssertEqual(reading.state, .needsSetup)
+        XCTAssertTrue(reading.subtitle.contains("별도 인증 창"))
+        XCTAssertNil(session.webView.url, "Paused reads must not prepare or navigate the parent")
+        XCTAssertFalse(session.isLoading)
+    }
+
+    @MainActor
+    func testPopupCapAndOpenerOwnershipKeepUnrelatedWindowsOut() throws {
+        _ = NSApplication.shared
+        let session = WebAccountSession(kind: .claude, websiteDataStore: .nonPersistent(), presentAuthenticationWindow: { _, _ in })
+        defer { session.closeAuthenticationPopups() }
+        let unrelated = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let blank = URL(string: "about:blank")
+        XCTAssertNil(session.makeAuthenticationPopup(configuration: session.webView.configuration, opener: unrelated, requestURL: blank))
+        XCTAssertNil(session.makeAuthenticationPopup(configuration: session.webView.configuration, opener: session.webView, requestURL: URL(string: "custom-auth://callback")))
+        var opener = session.webView
+        for _ in 0..<3 {
+            opener = try XCTUnwrap(session.makeAuthenticationPopup(configuration: opener.configuration, opener: opener, requestURL: blank))
+        }
+        XCTAssertNil(session.makeAuthenticationPopup(configuration: opener.configuration, opener: opener, requestURL: blank))
+        XCTAssertTrue(session.pendingAuthenticationStatus?.contains("여러 개") == true)
+    }
+
+    @MainActor
+    func testExplicitPopupCleanupCancelsAScheduledParentRestore() async throws {
+        _ = NSApplication.shared
+        var window: NSWindow?
+        let session = WebAccountSession(kind: .codex, websiteDataStore: .nonPersistent(), presentAuthenticationWindow: { created, _ in window = created })
+        let child = try XCTUnwrap(session.makeAuthenticationPopup(configuration: session.webView.configuration, opener: session.webView, requestURL: URL(string: "about:blank")))
+        let created = try XCTUnwrap(window)
+        session.windowWillClose(Notification(name: NSWindow.willCloseNotification, object: created))
+        session.closeAuthenticationPopups()
+        created.close()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertFalse(session.isAuthenticatingPopup)
+        XCTAssertNil(child.navigationDelegate)
+        XCTAssertNil(child.uiDelegate)
+        XCTAssertNil(session.webView.url)
+        XCTAssertFalse(session.isLoading, "Explicit cancellation must not start a hidden restore request")
+    }
+
+    @MainActor
+    func testClearingAnEphemeralSessionClosesPopupsWithoutReloadingTheService() async throws {
+        _ = NSApplication.shared
+        let session = WebAccountSession(kind: .codex, websiteDataStore: .nonPersistent(), presentAuthenticationWindow: { _, _ in })
+        let child = try XCTUnwrap(session.makeAuthenticationPopup(configuration: session.webView.configuration, opener: session.webView, requestURL: URL(string: "about:blank")))
+        await session.clear()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertFalse(session.isAuthenticatingPopup)
+        XCTAssertNil(child.navigationDelegate)
+        XCTAssertNil(child.uiDelegate)
+        XCTAssertNil(session.webView.url?.host)
+        XCTAssertEqual(session.currentHost, "")
+        XCTAssertFalse(session.isLoading)
     }
 
     func testUsageScriptsAreRestrictedToExactOfficialHTTPSOrigins() {

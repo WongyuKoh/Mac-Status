@@ -15,8 +15,8 @@ final class KeyboardWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 
     override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown {
-            NSApp.activate()
+        if event.type == .leftMouseDown, WindowFocus.target(for: self) === self {
+            if !NSApp.isActive { NSApp.activate() }
             if !isKeyWindow { makeKeyAndOrderFront(nil) }
         }
         InputDiagnostics.recordWindowEvent(event)
@@ -33,24 +33,38 @@ enum InputDiagnostics {
     private static var appMouse = 0
     private static var windowKeys = 0
     private static var windowMouse = 0
+    private static var lastMouseWindowClass = "none"
+    private static var lastMouseWasActive = false
     private static var monitor: Any?
     private static var timer: Timer?
     private static let output = URL(fileURLWithPath: "/private/tmp/mac-status-input-diagnostics/state.json")
+    private static let enabledFlag = output.deletingLastPathComponent().appendingPathComponent("enabled")
+    private static var stopAtUptime = 0.0
 
     static func start() {
         guard ProcessInfo.processInfo.environment["MAC_STATUS_INPUT_DIAGNOSTICS"] == "1", !enabled else { return }
         enabled = true
         try? FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
+        _ = FileManager.default.createFile(atPath: enabledFlag.path, contents: Data(), attributes: [.posixPermissions: 0o600])
+        stopAtUptime = ProcessInfo.processInfo.systemUptime + 300
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { event in
             MainActor.assumeIsolated {
                 if event.type == .keyDown { appKeys += 1 }
-                if event.type == .leftMouseDown { appMouse += 1 }
+                if event.type == .leftMouseDown {
+                    appMouse += 1
+                    lastMouseWindowClass = event.window.map { String(describing: type(of: $0)) } ?? "none"
+                    lastMouseWasActive = NSApp.isActive
+                }
             }
             return event
         }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            MainActor.assumeIsolated { writeSnapshot() }
+            MainActor.assumeIsolated {
+                if !FileManager.default.fileExists(atPath: enabledFlag.path) || ProcessInfo.processInfo.systemUptime >= stopAtUptime {
+                    stop()
+                } else { writeSnapshot() }
+            }
         }
         writeSnapshot()
     }
@@ -61,15 +75,28 @@ enum InputDiagnostics {
         if event.type == .leftMouseDown { windowMouse += 1 }
     }
 
+    private static func stop() {
+        enabled = false
+        timer?.invalidate(); timer = nil
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        try? FileManager.default.removeItem(at: enabledFlag)
+        writeSnapshot()
+    }
+
     private static func writeSnapshot() {
         let windows: [[String: Any]] = NSApp.windows.filter(\.isVisible).map {
             ["number": $0.windowNumber, "key": $0.isKeyWindow, "main": $0.isMainWindow,
              "canBecomeKey": $0.canBecomeKey, "class": String(describing: type(of: $0)),
+             "hasAttachedSheet": $0.attachedSheet != nil, "isSheet": $0.sheetParent != nil,
+             "ignoresMouseEvents": $0.ignoresMouseEvents,
              "responderClass": $0.firstResponder.map { String(describing: type(of: $0)) } ?? "none"]
         }
-        let state: [String: Any] = ["active": NSApp.isActive, "activationPolicy": NSApp.activationPolicy().rawValue,
+        let state: [String: Any] = ["enabled": enabled, "pid": ProcessInfo.processInfo.processIdentifier,
+                                    "active": NSApp.isActive, "activationPolicy": NSApp.activationPolicy().rawValue,
                                     "appKeyEvents": appKeys, "appMouseEvents": appMouse,
                                     "windowKeyEvents": windowKeys, "windowMouseEvents": windowMouse,
+                                    "lastMouseWindowClass": lastMouseWindowClass, "lastMouseWasActive": lastMouseWasActive,
                                     "keyWindow": NSApp.keyWindow?.windowNumber ?? -1, "windows": windows]
         guard let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]) else { return }
         try? data.write(to: output, options: .atomic)

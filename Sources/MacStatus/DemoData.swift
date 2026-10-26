@@ -29,6 +29,9 @@ enum DemoData {
             updateLoginItem: nil
         ))
         store.templates = MetricTemplate.defaults + [StatusStore.wakaTimeTemplate()]
+        if let cpu = store.templates.first(where: { $0.kind == .cpu }) {
+            store.setMenuBarMetric(MenuBarMetricID.primary(cpu.id))
+        }
         store.codexConnected = true
         store.claudeConnected = true
         store.claudeAPIConnected = false
