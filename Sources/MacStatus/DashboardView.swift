@@ -134,29 +134,37 @@ struct ActivityCard: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: template.symbol).font(.system(size: 20)).foregroundStyle(Palette.tint(template.tint))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(template.name).font(.system(size: 12, weight: .semibold))
-                    Text(reading.state == .failed ? "업데이트 실패 · 상세 확인" : "기록 시간")
-                        .font(.system(size: 9)).foregroundStyle(reading.state == .failed ? Palette.tint("orange") : Palette.muted)
+        HStack(spacing: 12) {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    Image(systemName: template.symbol).font(.system(size: 20)).foregroundStyle(Palette.tint(template.tint))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(template.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(reading.state == .failed ? "업데이트 실패 · 상세 확인" : "기록 시간")
+                            .font(.system(size: 9)).foregroundStyle(reading.state == .failed ? Palette.tint("orange") : Palette.muted)
+                    }
+                    Spacer(minLength: 8)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("오늘").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                        Text(MetricFormat.value(reading, template: template))
+                            .font(.system(size: 20, weight: .medium, design: .rounded)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    Rectangle().fill(Palette.line).frame(width: 1, height: 28).padding(.horizontal, 8)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("최근 7일").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                        Text(reading.details.first { $0.label == "최근 7일" }?.value ?? (reading.state == .needsSetup ? "연결 설정" : "—"))
+                            .font(.system(size: 16, weight: .medium, design: .rounded)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
                 }
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("오늘").font(.system(size: 9)).foregroundStyle(Palette.muted)
-                    Text(MetricFormat.value(reading, template: template))
-                        .font(.system(size: 20, weight: .medium, design: .rounded)).monospacedDigit()
-                }
-                Rectangle().fill(Palette.line).frame(width: 1, height: 28).padding(.horizontal, 8)
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("최근 7일").font(.system(size: 9)).foregroundStyle(Palette.muted)
-                    Text(reading.details.first { $0.label == "최근 7일" }?.value ?? (reading.state == .needsSetup ? "연결 설정" : "—"))
-                        .font(.system(size: 16, weight: .medium, design: .rounded)).monospacedDigit()
-                }
-                Image(systemName: "arrow.up.right").font(.system(size: 8)).foregroundStyle(Palette.muted)
-            }.padding(.horizontal, 13).padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading).cardSurface()
-        }.buttonStyle(.plain)
+                .padding(.leading, 13).padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .help("WakaTime 기록 상세 보기")
+            WakaTimeDashboardButton()
+        }.padding(.trailing, 13).cardSurface()
     }
 }
 
@@ -265,7 +273,9 @@ struct MetricDetailView: View {
                     AccentButton(title: "새로고침", symbol: "arrow.clockwise") {
                         Task { await store.refresh(force: true) }
                     }
-                    if !template.link.isEmpty {
+                    if template.kind == .wakatime {
+                        WakaTimeDashboardButton()
+                    } else if !template.link.isEmpty {
                         Button("서비스 열기") { if let url = URL(string: template.link) { NSWorkspace.shared.open(url) } }.buttonStyle(.borderless)
                     }
                     Spacer()

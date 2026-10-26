@@ -3,6 +3,8 @@ import CoreFoundation
 
 /// Reads WakaTime summaries only. Credentials never enter a URL or diagnostics.
 enum WakaTimeProvider {
+    static let dashboardURL = URL(string: "https://wakatime.com/dashboard")!
+
     static let maximumResponseBytes = 1_048_576
 
     /// Compatibility with existing plugin keys; new integrations should use a

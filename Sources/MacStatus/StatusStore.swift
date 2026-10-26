@@ -400,7 +400,7 @@ final class StatusStore: ObservableObject {
 
     static func wakaTimeTemplate() -> MetricTemplate {
         .init(name: "WakaTime", subtitle: "오늘 · 최근 7일 기록 시간", symbol: "clock", tint: "blue", kind: .wakatime,
-              unit: "시간", limit: nil, refreshInterval: 300, link: "https://wakatime.com/dashboard")
+              unit: "시간", limit: nil, refreshInterval: 300, link: WakaTimeProvider.dashboardURL.absoluteString)
     }
 
     static func openAITokensTemplate() -> MetricTemplate {
